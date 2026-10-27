@@ -3,7 +3,8 @@
 .env.*
 !.env.example
 
-# Local database dumps and Python cache
+# Local database dumps, logs and Python cache
 backups/
+*.log
 __pycache__/
 *.pyc
