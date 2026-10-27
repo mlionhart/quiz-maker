@@ -1,0 +1,2 @@
+# Keep Linux line endings everywhere (scripts and Dockerfiles break with CRLF)
+* text=auto eol=lf

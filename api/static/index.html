@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quiz Maker</title>
+<style>
+  :root { --bg:#16161a; --fg:#eee; --card:#202026; --line:#35353d; --acc:#4f46e5; --ok:#16a34a; --bad:#dc2626; color-scheme:dark; }
+  :root[data-theme="light"] { --bg:#fafafa; --fg:#1d1d1f; --card:#fff; --line:#ddd; color-scheme:light; }
+  * { box-sizing: border-box; }
+  body { font:16px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--fg); margin:0; }
+  main { max-width:720px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.4rem; } h2 { font-size:1.1rem; margin-top:0; }
+  nav { display:flex; gap:8px; margin-bottom:16px; }
+  button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
+  button:disabled { opacity:.6; cursor:default; }
+  button.primary { background:var(--acc); color:#fff; border-color:var(--acc); }
+  button.ok { background:var(--ok); color:#fff; border-color:var(--ok); }
+  button.bad { background:var(--bad); color:#fff; border-color:var(--bad); }
+  button.active { border-color:var(--acc); font-weight:600; }
+  input, textarea, select { font:inherit; width:100%; padding:8px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); }
+  textarea { resize:vertical; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:12px; }
+  .row { display:flex; gap:8px; align-items:center; } .row > * { flex:1; } .row > button { flex:none; }
+  .btns { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
+  .choice { display:block; width:100%; text-align:left; margin-bottom:8px; }
+  .fb { margin:12px 0; padding:12px; border-radius:8px; border:1px solid var(--line); }
+  .fb.ok { border-color:var(--ok); } .fb.bad { border-color:var(--bad); }
+  .muted { color:#888; font-size:.9rem; }
+  .big { font-size:1.3rem; margin:12px 0; }
+  .hidden { display:none; }
+  label { display:block; margin:10px 0 4px; font-size:.9rem; color:#888; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Quiz Maker</h1>
+  <nav>
+    <button id="tab-list" class="active">My quizzes</button>
+    <button id="tab-new">New quiz</button>
+    <button id="theme" title="Switch light/dark" style="margin-left:auto">◐</button>
+  </nav>
+
+  <section id="view-list"></section>
+
+  <section id="view-new" class="hidden">
+    <div class="card">
+      <label for="title">Quiz title</label>
+      <input id="title" placeholder="e.g. Spanish verbs">
+    </div>
+
+    <details class="card">
+      <summary>Source material (optional)</summary>
+      <p class="muted">Notes or text this quiz is based on. For written questions with no answer, the AI grades against this.</p>
+      <textarea id="source" rows="5"></textarea>
+    </details>
+
+    <div class="card">
+      <h2>Questions</h2>
+      <p class="muted">Pick a type for each question. Written answers are graded by AI, and the answer is optional: without one, the AI uses the quiz's source material, or else general knowledge. For multiple choice, type the wrong answers separated by | or leave them blank and use the AI fill button, which also writes a short explanation.</p>
+      <div id="qs"></div>
+      <div class="btns">
+        <button id="add-q">+ Add question</button>
+        <button id="fill-d">Fill missing wrong answers and explanations with AI</button>
+        <span id="fill-status" class="muted"></span>
+      </div>
+    </div>
+
+    <details class="card">
+      <summary>Generate with AI from pasted text</summary>
+      <label for="src">Paste text</label>
+      <textarea id="src" rows="6" placeholder="Paste notes, an article, a chapter..."></textarea>
+      <label for="gen-kind">Question type</label>
+      <select id="gen-kind"><option value="choice">Multiple choice</option><option value="written">Written (AI-graded)</option></select>
+      <label for="n">How many questions</label>
+      <input id="n" type="number" value="10" min="1" max="50">
+      <label><input type="checkbox" id="keep-src" checked style="width:auto"> Also save the pasted text as this quiz's source material</label>
+      <p><button id="gen" class="primary">Generate</button> <span id="gen-status" class="muted"></span></p>
+      <p class="muted">Generated questions are added to the list above so you can edit them before saving.</p>
+    </details>
+
+    <button id="save" class="primary">Save quiz</button>
+  </section>
+
+  <section id="view-play" class="hidden"></section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const shuffle = a => [...a].sort(() => Math.random() - .5);
+let editingId = null;
+
+try { const t = localStorage.getItem('theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
+$('theme').onclick = () => {
+  const t = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('theme', t); } catch {}
+};
+
+async function api(path, method = 'GET', body) {
+  const res = await fetch('/api' + path, {
+    method,
+    headers: { 'content-type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.status);
+  return res.json();
+}
+const fail = e => alert('Error: ' + e.message);
+
+function show(v) {
+  for (const n of ['list','new','play']) $('view-'+n).classList.toggle('hidden', n !== v);
+  $('tab-list').classList.toggle('active', v === 'list');
+  $('tab-new').classList.toggle('active', v === 'new');
+}
+
+// ---------- list ----------
+async function renderList() {
+  try {
+    const quizzes = await api('/quizzes');
+    $('view-list').innerHTML = quizzes.length ? quizzes.map(q => `
+      <div class="card">
+        <strong>${esc(q.title)}</strong><div class="muted">${q.count} questions</div>
+        <div class="btns">
+          <button class="primary" data-play="${q.id}">Start</button>
+          <button data-edit="${q.id}">Edit</button>
+          <button data-del="${q.id}">Delete</button>
+        </div>
+      </div>`).join('') : '<p class="muted">No quizzes yet. Click "New quiz".</p>';
+    show('list');
+  } catch (e) { fail(e); }
+}
+$('view-list').onclick = async e => {
+  const t = e.target.dataset;
+  try {
+    if (t.play) play(t.play);
+    if (t.edit) edit(t.edit);
+    if (t.del && confirm('Delete this quiz?')) { await api('/quizzes/' + t.del, 'DELETE'); renderList(); }
+  } catch (err) { fail(err); }
+};
+$('tab-list').onclick = renderList;
+$('tab-new').onclick = () => edit(null);
+
+// ---------- editor ----------
+function addRow(q = '', a = '', d = [], kind = 'written', e = '') {
+  const r = document.createElement('div');
+  r.className = 'row card';
+  r.innerHTML = `<div>
+      <select class="k"><option value="written">Written (AI-graded)</option><option value="choice">Multiple choice</option></select>
+      <input class="q" placeholder="Question" value="${esc(q)}" style="margin-top:6px">
+      <input class="a" placeholder="Answer" value="${esc(a)}" style="margin-top:6px">
+      <input class="d" placeholder="Wrong answers: one | two | three" value="${esc(d.join(' | '))}" style="margin-top:6px">
+      <input class="e" placeholder="Explanation shown after answering (optional)" value="${esc(e)}" style="margin-top:6px">
+    </div><button title="Remove">✕</button>`;
+  r.querySelector('button').onclick = () => r.remove();
+  const k = r.querySelector('.k'), dIn = r.querySelector('.d');
+  k.value = kind;
+  const sync = () => {
+    dIn.classList.toggle('hidden', k.value !== 'choice');
+    r.querySelector('.e').classList.toggle('hidden', k.value !== 'choice');
+    r.querySelector('.a').placeholder = k.value === 'choice' ? 'Correct answer' : 'Answer (optional: AI uses source or general knowledge)';
+  };
+  k.onchange = sync; sync();
+  $('qs').appendChild(r);
+}
+const readRow = r => {
+  const kind = r.querySelector('.k').value;
+  return {
+    q: r.querySelector('.q').value.trim(),
+    a: r.querySelector('.a').value.trim(),
+    kind,
+    d: kind === 'choice' ? r.querySelector('.d').value.split('|').map(s => s.trim()).filter(Boolean) : [],
+    e: kind === 'choice' ? r.querySelector('.e').value.trim() : '',
+  };
+};
+const readRows = () => [...$('qs').children].map(readRow);
+async function edit(id) {
+  editingId = id;
+  try {
+    const quiz = id ? await api('/quizzes/' + id) : null;
+    $('title').value = quiz ? quiz.title : '';
+    $('source').value = quiz ? quiz.source : '';
+    $('qs').innerHTML = '';
+    (quiz ? quiz.items : [{q:'',a:'',d:[],kind:'written'}]).forEach(i => addRow(i.q, i.a, i.d, i.kind, i.e));
+    show('new');
+  } catch (e) { fail(e); }
+}
+$('add-q').onclick = () => addRow();
+$('fill-d').onclick = async () => {
+  const rows = [...$('qs').children].filter(r => {
+    const x = readRow(r);
+    return x.kind === 'choice' && x.q && x.a && (x.d.length < 3 || !x.e);
+  });
+  if (!rows.length) { $('fill-status').textContent = 'Nothing to fill.'; return; }
+  $('fill-d').disabled = true; $('fill-status').textContent = 'Generating...';
+  try {
+    const items = rows.map(r => ({ q: r.querySelector('.q').value.trim(), a: r.querySelector('.a').value.trim() }));
+    const { items: filled } = await api('/distractors', 'POST', { items });
+    rows.forEach((r, i) => {
+      const x = readRow(r);
+      if (x.d.length < 3) r.querySelector('.d').value = filled[i].d.join(' | ');
+      if (!x.e) r.querySelector('.e').value = filled[i].e;
+    });
+    $('fill-status').textContent = `Filled ${rows.length}.`;
+  } catch (e) { $('fill-status').textContent = 'Error: ' + e.message; }
+  $('fill-d').disabled = false;
+};
+$('save').onclick = async () => {
+  const rows = readRows().filter(i => i.q);
+  const title = $('title').value.trim() || 'Untitled quiz';
+  const source = $('source').value.trim();
+  if (!rows.length) return alert('Add at least one question.');
+  if (rows.some(i => i.kind === 'choice' && !i.a)) return alert('Multiple-choice questions need a correct answer.');
+  const items = rows;
+  try {
+    await (editingId ? api('/quizzes/' + editingId, 'PUT', { title, source, items }) : api('/quizzes', 'POST', { title, source, items }));
+    renderList();
+  } catch (e) { fail(e); }
+};
+
+// ---------- AI generation ----------
+$('gen').onclick = async () => {
+  const text = $('src').value.trim(), n = +$('n').value || 10, kind = $('gen-kind').value;
+  if (!text) return alert('Paste some text first.');
+  $('gen').disabled = true; $('gen-status').textContent = 'Generating...';
+  try {
+    const { items, usage } = await api('/generate', 'POST', { text, n, kind });
+    items.forEach(i => addRow(i.q, i.a, i.d || [], i.kind, i.e || ''));
+    if ($('keep-src').checked && !$('source').value.trim()) $('source').value = text;
+    $('gen-status').textContent = `Added ${items.length} questions (${usage.input} in / ${usage.output} out tokens).`;
+  } catch (e) { $('gen-status').textContent = 'Error: ' + e.message; }
+  $('gen').disabled = false;
+};
+
+// ---------- play ----------
+function buildChoices(it, all) {
+  const wrong = shuffle((it.d || []).filter(x => x && x !== it.a)).slice(0, 3);
+  if (wrong.length < 3) {   // top up with other questions' answers
+    const extra = shuffle(all.map(o => o.a).filter(a => a !== it.a && !wrong.includes(a)));
+    wrong.push(...extra.slice(0, 3 - wrong.length));
+  }
+  return shuffle([it.a, ...wrong]);
+}
+
+async function play(id) {
+  const quiz = await api('/quizzes/' + id);
+  const order = shuffle(quiz.items);
+  let i = 0, score = 0;
+  const v = $('view-play');
+  show('play');
+
+  const finish = ok => { if (ok) score++; i++; step(); };
+
+  const choiceStep = (it, choices) => {
+    v.innerHTML = `<div class="card"><div class="muted">${esc(quiz.title)} · ${i+1}/${order.length}</div>
+      <p class="big">${esc(it.q)}</p>
+      ${choices.map((c, k) => `<button class="choice" data-k="${k}">${esc(c)}</button>`).join('')}
+      <p><button id="quit">Quit</button> <button class="primary hidden" id="next">Next</button></p>
+      <div id="fb"></div></div>`;
+    $('quit').onclick = renderList;
+    let picked = null;
+    v.querySelectorAll('.choice').forEach(b => b.onclick = () => {
+      if (picked !== null) return;
+      picked = choices[+b.dataset.k];
+      const right = picked === it.a;
+      v.querySelectorAll('.choice').forEach(x => {
+        if (choices[+x.dataset.k] === it.a) { x.classList.add('ok'); x.textContent = '✓ ' + x.textContent; }
+        else if (x === b) { x.classList.add('bad'); x.textContent = '✗ ' + x.textContent; }
+      });
+      const fb = $('fb');
+      fb.className = 'fb ' + (right ? 'ok' : 'bad');
+      const head = right ? '✅ Correct!' : `❌ Not quite. The answer is: ${esc(it.a)}`;
+      const show = text => { fb.innerHTML = `<strong>${head}</strong>` + (text ? `<div style="margin-top:6px">${esc(text)}</div>` : ''); };
+      if (it.e) show(it.e);
+      else {
+        fb.innerHTML = `<strong>${head}</strong><div class="muted">Getting explanation...</div>`;
+        api('/explain', 'POST', { q: it.q, a: it.a, picked }).then(r => show(r.explanation)).catch(() => show(''));
+      }
+      $('next').classList.remove('hidden'); $('next').focus();
+      $('next').onclick = () => finish(right);
+    });
+  };
+
+  const typedStep = it => {
+    v.innerHTML = `<div class="card"><div class="muted">${esc(quiz.title)} · ${i+1}/${order.length}</div>
+      <p class="big">${esc(it.q)}</p>
+      <input id="guess" placeholder="Your answer" autofocus>
+      <p><button class="primary" id="reveal">Check</button> <button id="quit">Quit</button></p>
+      <div id="ans" class="hidden"></div></div>`;
+    $('quit').onclick = renderList;
+
+    // ok: true/false from the AI, or null when grading was unavailable (self-grade)
+    const showResult = (ok, feedback, info = {}) => {
+      const shown = it.a || info.answer || '';
+      const basisNote = !it.a && info.basis ? `<p class="muted">No answer key, so the AI graded from ${esc(info.basis)}.</p>` : '';
+      $('ans').innerHTML = (ok === null ? '' : `<p>${ok ? '✅ Correct' : '❌ Incorrect'}</p>`)
+        + (feedback ? `<p class="muted">${esc(feedback)}</p>` : '')
+        + basisNote
+        + (shown ? `<p>${it.a ? 'Answer' : "AI's answer"}: <strong>${esc(shown)}</strong></p>` : '')
+        + (ok === null
+          ? `<p>Did you get it right?</p><button class="ok" id="y">Yes</button> <button class="bad" id="n">No</button>`
+          : `<button id="flip">Mark as ${ok ? 'wrong' : 'correct'} instead</button> <button class="primary" id="next">Next</button>`);
+      if (ok === null) { $('y').onclick = () => finish(true); $('n').onclick = () => finish(false); }
+      else {
+        $('flip').onclick = () => showResult(!ok, feedback, info);
+        $('next').onclick = () => finish(ok); $('next').focus();
+      }
+    };
+
+    const check = async () => {
+      const response = $('guess').value.trim();
+      $('reveal').disabled = true; $('guess').disabled = true;
+      $('ans').classList.remove('hidden');
+      if (!response) return showResult(false, 'No answer given.');
+      $('ans').textContent = 'Grading...';
+      try {
+        const r = await api('/grade', 'POST', { q: it.q, a: it.a, response, quiz_id: quiz.id });
+        showResult(r.correct, r.feedback, r);
+      } catch (e) { showResult(null, 'AI grading unavailable: ' + e.message); }
+    };
+    $('reveal').onclick = check;
+    $('guess').onkeydown = e => { if (e.key === 'Enter') check(); };
+    $('guess').focus();
+  };
+
+  const step = () => {
+    if (i >= order.length) {
+      v.innerHTML = `<div class="card"><h2>Done!</h2><p class="big">${Math.round(score / order.length * 100)}%</p><p class="muted">${score} / ${order.length} correct</p><button class="primary" id="again">Retry</button> <button id="back">Back</button></div>`;
+      $('again').onclick = () => play(id); $('back').onclick = renderList; return;
+    }
+    const it = order[i];
+    const choices = it.kind === 'choice' ? buildChoices(it, quiz.items) : [];
+    if (choices.length >= 2) choiceStep(it, choices); else typedStep(it);   // written, or too few options to build a choice list
+  };
+  step();
+}
+
+renderList();
+</script>
+</body>
+</html>

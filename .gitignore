@@ -1,0 +1,9 @@
+# Secrets: never commit these (.env.example is the safe template)
+.env
+.env.*
+!.env.example
+
+# Local database dumps and Python cache
+backups/
+__pycache__/
+*.pyc
