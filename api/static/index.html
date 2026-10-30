@@ -9,8 +9,8 @@
 <link rel="manifest" href="/site.webmanifest" crossorigin="use-credentials"> <!-- The crossorigin="use-credentials" on the manifest matters for you. Without it, the browser fetches that file without your login cookie, and Cloudflare Access can answer with a redirect and an error in the console. It’s harmless, but this avoids it. -->
 <title>Quiz Maker</title>
 <style>
-  :root { --bg:#16161a; --fg:#eee; --card:#202026; --line:#3d3d47; --field:#0e0e12; --btn:#2c2c36; --acc:#4f46e5; --ok:#16a34a; --bad:#dc2626; --g:#3fb950; --b:#58a6ff; --r:#f85149; color-scheme:dark; }
-  :root[data-theme="light"] { --bg:#fafafa; --fg:#1d1d1f; --card:#fff; --line:#ccc; --field:#f1f1f4; --btn:#eceef2; --g:#1a7f37; --b:#0969da; --r:#cf222e; color-scheme:light; }
+  :root { --bg:#16161a; --fg:#eee; --card:#202026; --line:#3d3d47; --field:var(--bg); --btn:#2c2c36; --acc:#4f46e5; --ok:#16a34a; --bad:#dc2626; --g:#3fb950; --b:#58a6ff; --r:#f85149; color-scheme:dark; }
+  :root[data-theme="light"] { --bg:#fafafa; --fg:#1d1d1f; --card:#fff; --line:#ccc; --btn:#eceef2; --g:#1a7f37; --b:#0969da; --r:#cf222e; color-scheme:light; }
   * { box-sizing: border-box; }
   body { font:16px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--fg); margin:0; }
   main { max-width:720px; margin:0 auto; padding:16px; }
@@ -19,14 +19,14 @@
   button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--btn); color:var(--fg); cursor:pointer; }
   button:hover:not(:disabled) { border-color:var(--acc); }
   button:disabled { opacity:.6; cursor:default; }
-  button.add { color:var(--g); background:color-mix(in srgb, var(--g) 14%, transparent); border-color:color-mix(in srgb, var(--g) 45%, transparent); }
-  button.ai { color:var(--b); background:color-mix(in srgb, var(--b) 14%, transparent); border-color:color-mix(in srgb, var(--b) 45%, transparent); }
-  button.del { color:var(--r); background:color-mix(in srgb, var(--r) 14%, transparent); border-color:color-mix(in srgb, var(--r) 45%, transparent); }
-  .seg { display:flex; }
-  .seg button { flex:1; border-radius:0; }
-  .seg button:first-child { border-radius:8px 0 0 8px; }
-  .seg button:last-child { border-radius:0 8px 8px 0; margin-left:-1px; }
-  .seg button.on { background:var(--acc); color:#fff; border-color:var(--acc); position:relative; }
+  button.add, button.ai, button.del { background:transparent; }
+  button.add { color:var(--g); border-color:var(--g); }
+  button.ai { color:var(--b); border-color:var(--b); }
+  button.del { color:var(--r); border-color:var(--r); }
+  button.add:hover:not(:disabled) { border-color:var(--g); background:color-mix(in srgb, var(--g) 12%, transparent); }
+  button.ai:hover:not(:disabled) { border-color:var(--b); background:color-mix(in srgb, var(--b) 12%, transparent); }
+  button.del:hover:not(:disabled) { border-color:var(--r); background:color-mix(in srgb, var(--r) 12%, transparent); }
+  button.kind { width:100%; text-align:left; }
   .savebar { position:sticky; bottom:0; display:flex; gap:12px; align-items:center; margin:0 -16px; padding:12px 16px; background:var(--bg); border-top:1px solid var(--line); }
   button.primary { background:var(--acc); color:#fff; border-color:var(--acc); }
   button.ok { background:var(--ok); color:#fff; border-color:var(--ok); }
@@ -70,6 +70,19 @@
       <textarea id="source" rows="5"></textarea>
     </details>
 
+    <details class="card">
+      <summary>Generate with AI from pasted text</summary>
+      <label for="src">Paste text</label>
+      <textarea id="src" rows="6" placeholder="Paste notes, an article, a chapter..."></textarea>
+      <label for="gen-kind">Question type</label>
+      <button type="button" id="gen-kind" class="kind" data-value="choice">Multiple choice</button>
+      <label for="n">How many questions</label>
+      <input id="n" type="number" value="10" min="1" max="50">
+      <label><input type="checkbox" id="keep-src" checked style="width:auto"> Also save the pasted text as this quiz's source material</label>
+      <p><button id="gen" class="primary">Generate</button> <span id="gen-status" class="muted"></span></p>
+      <p class="muted">Generated questions are added to the Questions list below so you can edit them before saving.</p>
+    </details>
+
     <div class="card">
       <h2>Questions</h2>
       <p class="muted">Pick a type for each question. Written answers are graded by AI, and the answer is optional: without one, the AI uses the quiz's source material, or else general knowledge. For multiple choice, type the wrong answers separated by | or leave them blank and use the AI fill button, which also writes a short explanation.</p>
@@ -80,19 +93,6 @@
       </div>
       <div id="qs"></div>
     </div>
-
-    <details class="card">
-      <summary>Generate with AI from pasted text</summary>
-      <label for="src">Paste text</label>
-      <textarea id="src" rows="6" placeholder="Paste notes, an article, a chapter..."></textarea>
-      <label for="gen-kind">Question type</label>
-      <div id="gen-kind" class="seg" data-value="choice"><button type="button" data-v="choice" class="on">Multiple choice</button><button type="button" data-v="written">Written (AI-graded)</button></div>
-      <label for="n">How many questions</label>
-      <input id="n" type="number" value="10" min="1" max="50">
-      <label><input type="checkbox" id="keep-src" checked style="width:auto"> Also save the pasted text as this quiz's source material</label>
-      <p><button id="gen" class="primary">Generate</button> <span id="gen-status" class="muted"></span></p>
-      <p class="muted">Generated questions are added to the list above so you can edit them before saving.</p>
-    </details>
 
     <div class="savebar">
       <button id="save" class="primary">Save quiz</button>
@@ -165,22 +165,23 @@ $('tab-list').onclick = renderList;
 $('tab-new').onclick = () => edit(null);
 
 // ---------- editor ----------
-// Two-button toggle (.seg): the chosen value lives in dataset.value, and a 'change' event fires on click.
-function setSeg(seg, v) {
-  seg.dataset.value = v;
-  seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+// Question-type toggle (button.kind): one click flips it. The value lives in dataset.value, and a 'change' event fires.
+const KINDS = { written: 'Written (AI-graded)', choice: 'Multiple choice' };
+function setKind(btn, v) {
+  btn.dataset.value = v;
+  btn.textContent = KINDS[v];
 }
 document.addEventListener('click', e => {
-  const b = e.target.closest('.seg button');
+  const b = e.target.closest('button.kind');
   if (!b) return;
-  setSeg(b.parentElement, b.dataset.v);
-  b.parentElement.dispatchEvent(new Event('change'));
+  setKind(b, b.dataset.value === 'choice' ? 'written' : 'choice');
+  b.dispatchEvent(new Event('change'));
 });
 function addRow(q = '', a = '', d = [], kind = 'written', e = '') {
   const r = document.createElement('div');
   r.className = 'row card';
   r.innerHTML = `<div>
-      <div class="seg k"><button type="button" data-v="written">Written (AI-graded)</button><button type="button" data-v="choice">Multiple choice</button></div>
+      <button type="button" class="kind k"></button>
       <input class="q" placeholder="Question" value="${esc(q)}" style="margin-top:6px">
       <input class="a" placeholder="Answer" value="${esc(a)}" style="margin-top:6px">
       <input class="d" placeholder="Wrong answers: one | two | three" value="${esc(d.join(' | '))}" style="margin-top:6px">
@@ -188,7 +189,7 @@ function addRow(q = '', a = '', d = [], kind = 'written', e = '') {
     </div><button class="del" title="Remove">✕</button>`;
   r.querySelector('button.del').onclick = () => r.remove();
   const k = r.querySelector('.k'), dIn = r.querySelector('.d');
-  setSeg(k, kind);
+  setKind(k, kind);
   const sync = () => {
     const choice = k.dataset.value === 'choice';
     dIn.classList.toggle('hidden', !choice);
