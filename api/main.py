@@ -159,6 +159,9 @@ def generate(body: GenerateIn):
     if body.kind == "choice":
         prompt += (
             "For each, also give 3 plausible but wrong answers that look similar in style and length to the correct one. "
+            "First work out what concept each question is teaching. Each wrong answer should be a real, different item from the same category that a learner could confuse with the correct one, "
+            "and it should make sense in the context of the question; style and length matter less than that. "
+            "If a question gives a specific example (such as a URL, code snippet or sentence) and asks you to identify a part of it, the wrong answers must be other parts that actually appear in that example. "
             'Also add "e": a one or two sentence explanation of why the correct answer is right. '
             'Respond with ONLY a JSON array like [{"q":"...","a":"...","d":["...","...","..."],"e":"..."}].\n\n'
         )
@@ -176,6 +179,9 @@ def distractors(body: DistractorsIn):
     prompt = (
         "For each quiz question below, give 3 plausible but wrong answers, similar in style and length to the correct one, "
         "and a one or two sentence explanation of why the correct answer is right. "
+        "First work out what concept each question is teaching. Each wrong answer should be a real, different item from the same category that a learner could confuse with the correct one, "
+        "and it should make sense in the context of the question; style and length matter less than that. "
+        "If a question gives a specific example (such as a URL, code snippet or sentence) and asks you to identify a part of it, the wrong answers must be other parts that actually appear in that example. "
         'Respond with ONLY a JSON array with one object per question, same order, like [{"d":["...","...","..."],"e":"..."}].\n\n'
         + questions
     )

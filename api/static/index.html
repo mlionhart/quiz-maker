@@ -9,20 +9,31 @@
 <link rel="manifest" href="/site.webmanifest" crossorigin="use-credentials"> <!-- The crossorigin="use-credentials" on the manifest matters for you. Without it, the browser fetches that file without your login cookie, and Cloudflare Access can answer with a redirect and an error in the console. It’s harmless, but this avoids it. -->
 <title>Quiz Maker</title>
 <style>
-  :root { --bg:#16161a; --fg:#eee; --card:#202026; --line:#35353d; --acc:#4f46e5; --ok:#16a34a; --bad:#dc2626; color-scheme:dark; }
-  :root[data-theme="light"] { --bg:#fafafa; --fg:#1d1d1f; --card:#fff; --line:#ddd; color-scheme:light; }
+  :root { --bg:#16161a; --fg:#eee; --card:#202026; --line:#3d3d47; --field:#0e0e12; --btn:#2c2c36; --acc:#4f46e5; --ok:#16a34a; --bad:#dc2626; --g:#3fb950; --b:#58a6ff; --r:#f85149; color-scheme:dark; }
+  :root[data-theme="light"] { --bg:#fafafa; --fg:#1d1d1f; --card:#fff; --line:#ccc; --field:#f1f1f4; --btn:#eceef2; --g:#1a7f37; --b:#0969da; --r:#cf222e; color-scheme:light; }
   * { box-sizing: border-box; }
   body { font:16px/1.5 system-ui,sans-serif; background:var(--bg); color:var(--fg); margin:0; }
   main { max-width:720px; margin:0 auto; padding:16px; }
   h1 { font-size:1.4rem; } h2 { font-size:1.1rem; margin-top:0; }
   nav { display:flex; gap:8px; margin-bottom:16px; }
-  button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); cursor:pointer; }
+  button { font:inherit; padding:8px 14px; border-radius:8px; border:1px solid var(--line); background:var(--btn); color:var(--fg); cursor:pointer; }
+  button:hover:not(:disabled) { border-color:var(--acc); }
   button:disabled { opacity:.6; cursor:default; }
+  button.add { color:var(--g); background:color-mix(in srgb, var(--g) 14%, transparent); border-color:color-mix(in srgb, var(--g) 45%, transparent); }
+  button.ai { color:var(--b); background:color-mix(in srgb, var(--b) 14%, transparent); border-color:color-mix(in srgb, var(--b) 45%, transparent); }
+  button.del { color:var(--r); background:color-mix(in srgb, var(--r) 14%, transparent); border-color:color-mix(in srgb, var(--r) 45%, transparent); }
+  .seg { display:flex; }
+  .seg button { flex:1; border-radius:0; }
+  .seg button:first-child { border-radius:8px 0 0 8px; }
+  .seg button:last-child { border-radius:0 8px 8px 0; margin-left:-1px; }
+  .seg button.on { background:var(--acc); color:#fff; border-color:var(--acc); position:relative; }
+  .savebar { position:sticky; bottom:0; display:flex; gap:12px; align-items:center; margin:0 -16px; padding:12px 16px; background:var(--bg); border-top:1px solid var(--line); }
   button.primary { background:var(--acc); color:#fff; border-color:var(--acc); }
   button.ok { background:var(--ok); color:#fff; border-color:var(--ok); }
   button.bad { background:var(--bad); color:#fff; border-color:var(--bad); }
   button.active { border-color:var(--acc); font-weight:600; }
-  input, textarea, select { font:inherit; width:100%; padding:8px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--fg); }
+  input, textarea, select { font:inherit; width:100%; padding:8px; border-radius:8px; border:1px solid var(--line); background:var(--field); color:var(--fg); }
+  input:focus, textarea:focus, select:focus { outline:none; border-color:var(--acc); }
   textarea { resize:vertical; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:12px; }
   .row { display:flex; gap:8px; align-items:center; } .row > * { flex:1; } .row > button { flex:none; }
@@ -62,12 +73,12 @@
     <div class="card">
       <h2>Questions</h2>
       <p class="muted">Pick a type for each question. Written answers are graded by AI, and the answer is optional: without one, the AI uses the quiz's source material, or else general knowledge. For multiple choice, type the wrong answers separated by | or leave them blank and use the AI fill button, which also writes a short explanation.</p>
-      <div id="qs"></div>
-      <div class="btns">
-        <button id="add-q">+ Add question</button>
-        <button id="fill-d">Fill missing wrong answers and explanations with AI</button>
-        <span id="fill-status" class="muted"></span>
+      <p class="muted">Saving also fills in any missing wrong answers and explanations, so the button below is optional.</p>
+      <div class="btns" style="margin:0 0 12px">
+        <button id="add-q" class="add">+ Add question</button>
+        <button id="fill-d" class="ai">Fill missing wrong answers and explanations with AI</button>
       </div>
+      <div id="qs"></div>
     </div>
 
     <details class="card">
@@ -75,7 +86,7 @@
       <label for="src">Paste text</label>
       <textarea id="src" rows="6" placeholder="Paste notes, an article, a chapter..."></textarea>
       <label for="gen-kind">Question type</label>
-      <select id="gen-kind"><option value="choice">Multiple choice</option><option value="written">Written (AI-graded)</option></select>
+      <div id="gen-kind" class="seg" data-value="choice"><button type="button" data-v="choice" class="on">Multiple choice</button><button type="button" data-v="written">Written (AI-graded)</button></div>
       <label for="n">How many questions</label>
       <input id="n" type="number" value="10" min="1" max="50">
       <label><input type="checkbox" id="keep-src" checked style="width:auto"> Also save the pasted text as this quiz's source material</label>
@@ -83,7 +94,10 @@
       <p class="muted">Generated questions are added to the list above so you can edit them before saving.</p>
     </details>
 
-    <button id="save" class="primary">Save quiz</button>
+    <div class="savebar">
+      <button id="save" class="primary">Save quiz</button>
+      <span id="fill-status" class="muted"></span>
+    </div>
   </section>
 
   <section id="view-play" class="hidden"></section>
@@ -92,7 +106,11 @@
 <script>
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const shuffle = a => [...a].sort(() => Math.random() - .5);
+const shuffle = a => {
+  const r = [...a];
+  for (let i = r.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [r[i], r[j]] = [r[j], r[i]]; }
+  return r;
+};
 let editingId = null;
 
 try { const t = localStorage.getItem('theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
@@ -147,29 +165,42 @@ $('tab-list').onclick = renderList;
 $('tab-new').onclick = () => edit(null);
 
 // ---------- editor ----------
+// Two-button toggle (.seg): the chosen value lives in dataset.value, and a 'change' event fires on click.
+function setSeg(seg, v) {
+  seg.dataset.value = v;
+  seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+}
+document.addEventListener('click', e => {
+  const b = e.target.closest('.seg button');
+  if (!b) return;
+  setSeg(b.parentElement, b.dataset.v);
+  b.parentElement.dispatchEvent(new Event('change'));
+});
 function addRow(q = '', a = '', d = [], kind = 'written', e = '') {
   const r = document.createElement('div');
   r.className = 'row card';
   r.innerHTML = `<div>
-      <select class="k"><option value="written">Written (AI-graded)</option><option value="choice">Multiple choice</option></select>
+      <div class="seg k"><button type="button" data-v="written">Written (AI-graded)</button><button type="button" data-v="choice">Multiple choice</button></div>
       <input class="q" placeholder="Question" value="${esc(q)}" style="margin-top:6px">
       <input class="a" placeholder="Answer" value="${esc(a)}" style="margin-top:6px">
       <input class="d" placeholder="Wrong answers: one | two | three" value="${esc(d.join(' | '))}" style="margin-top:6px">
       <input class="e" placeholder="Explanation shown after answering (optional)" value="${esc(e)}" style="margin-top:6px">
-    </div><button title="Remove">✕</button>`;
-  r.querySelector('button').onclick = () => r.remove();
+    </div><button class="del" title="Remove">✕</button>`;
+  r.querySelector('button.del').onclick = () => r.remove();
   const k = r.querySelector('.k'), dIn = r.querySelector('.d');
-  k.value = kind;
+  setSeg(k, kind);
   const sync = () => {
-    dIn.classList.toggle('hidden', k.value !== 'choice');
-    r.querySelector('.e').classList.toggle('hidden', k.value !== 'choice');
-    r.querySelector('.a').placeholder = k.value === 'choice' ? 'Correct answer' : 'Answer (optional: AI uses source or general knowledge)';
+    const choice = k.dataset.value === 'choice';
+    dIn.classList.toggle('hidden', !choice);
+    r.querySelector('.e').classList.toggle('hidden', !choice);
+    r.querySelector('.a').placeholder = choice ? 'Correct answer' : 'Answer (optional: AI uses source or general knowledge)';
   };
   k.onchange = sync; sync();
   $('qs').appendChild(r);
+  return r;
 }
 const readRow = r => {
-  const kind = r.querySelector('.k').value;
+  const kind = r.querySelector('.k').dataset.value;
   return {
     q: r.querySelector('.q').value.trim(),
     a: r.querySelector('.a').value.trim(),
@@ -190,42 +221,62 @@ async function edit(id) {
     show('new');
   } catch (e) { fail(e); }
 }
-$('add-q').onclick = () => addRow();
-$('fill-d').onclick = async () => {
+// New questions go at the top, next to the Add button, so there is no scrolling to reach them.
+$('add-q').onclick = () => {
+  const r = addRow();
+  $('qs').prepend(r);
+  r.querySelector('.q').focus();
+};
+// Fills wrong answers and explanations for multiple-choice rows that lack them. Returns how many rows it filled.
+// Wrong answers the user already typed are kept; the AI only tops them up to 3.
+async function fillMissing() {
   const rows = [...$('qs').children].filter(r => {
     const x = readRow(r);
     return x.kind === 'choice' && x.q && x.a && (x.d.length < 3 || !x.e);
   });
-  if (!rows.length) { $('fill-status').textContent = 'Nothing to fill.'; return; }
-  $('fill-d').disabled = true; $('fill-status').textContent = 'Generating...';
+  if (!rows.length) return 0;
+  $('fill-status').textContent = 'Generating...';
+  const items = rows.map(r => ({ q: r.querySelector('.q').value.trim(), a: r.querySelector('.a').value.trim() }));
+  const { items: filled } = await api('/distractors', 'POST', { items });
+  rows.forEach((r, i) => {
+    const x = readRow(r);
+    if (x.d.length < 3) {
+      const extra = filled[i].d.filter(w => w !== x.a && !x.d.includes(w));
+      r.querySelector('.d').value = [...x.d, ...extra].slice(0, 3).join(' | ');
+    }
+    if (!x.e) r.querySelector('.e').value = filled[i].e;
+  });
+  return rows.length;
+}
+$('fill-d').onclick = async () => {
+  $('fill-d').disabled = true; $('fill-status').textContent = '';
   try {
-    const items = rows.map(r => ({ q: r.querySelector('.q').value.trim(), a: r.querySelector('.a').value.trim() }));
-    const { items: filled } = await api('/distractors', 'POST', { items });
-    rows.forEach((r, i) => {
-      const x = readRow(r);
-      if (x.d.length < 3) r.querySelector('.d').value = filled[i].d.join(' | ');
-      if (!x.e) r.querySelector('.e').value = filled[i].e;
-    });
-    $('fill-status').textContent = `Filled ${rows.length}.`;
+    const n = await fillMissing();
+    $('fill-status').textContent = n ? `Filled ${n}.` : 'Nothing to fill.';
   } catch (e) { $('fill-status').textContent = 'Error: ' + e.message; }
   $('fill-d').disabled = false;
 };
 $('save').onclick = async () => {
-  const rows = readRows().filter(i => i.q);
   const title = $('title').value.trim() || 'Untitled quiz';
   const source = $('source').value.trim();
-  if (!rows.length) return alert('Add at least one question.');
-  if (rows.some(i => i.kind === 'choice' && !i.a)) return alert('Multiple-choice questions need a correct answer.');
-  const items = rows;
+  const check = readRows().filter(i => i.q);
+  if (!check.length) return alert('Add at least one question.');
+  if (check.some(i => i.kind === 'choice' && !i.a)) return alert('Multiple-choice questions need a correct answer.');
+  $('save').disabled = true;
   try {
+    try { await fillMissing(); }
+    catch (e) { if (!confirm('The AI could not fill in the missing wrong answers: ' + e.message + '\n\nSave anyway?')) return; }
+    const items = readRows().filter(i => i.q);
     await (editingId ? api('/quizzes/' + editingId, 'PUT', { title, source, items }) : api('/quizzes', 'POST', { title, source, items }));
+    $('fill-status').textContent = '';
     renderList();
   } catch (e) { fail(e); }
+  finally { $('save').disabled = false; }
 };
 
 // ---------- AI generation ----------
 $('gen').onclick = async () => {
-  const text = $('src').value.trim(), n = +$('n').value || 10, kind = $('gen-kind').value;
+  const text = $('src').value.trim(), n = +$('n').value || 10, kind = $('gen-kind').dataset.value;
   if (!text) return alert('Paste some text first.');
   $('gen').disabled = true; $('gen-status').textContent = 'Generating...';
   try {
@@ -255,12 +306,13 @@ async function play(id) {
   show('play');
 
   const finish = ok => { if (ok) score++; i++; step(); };
+  const nextLabel = () => i === order.length - 1 ? 'Finish' : 'Next';
 
   const choiceStep = (it, choices) => {
     v.innerHTML = `<div class="card"><div class="muted">${esc(quiz.title)} · ${i+1}/${order.length}</div>
       <p class="big">${esc(it.q)}</p>
       ${choices.map((c, k) => `<button class="choice" data-k="${k}">${esc(c)}</button>`).join('')}
-      <p><button id="quit">Quit</button> <button class="primary hidden" id="next">Next</button></p>
+      <p><button id="quit">Quit</button> <button class="primary hidden" id="next">${nextLabel()}</button></p>
       <div id="fb"></div></div>`;
     $('quit').onclick = renderList;
     let picked = null;
@@ -304,7 +356,7 @@ async function play(id) {
         + (shown ? `<p>${it.a ? 'Answer' : "AI's answer"}: <strong>${esc(shown)}</strong></p>` : '')
         + (ok === null
           ? `<p>Did you get it right?</p><button class="ok" id="y">Yes</button> <button class="bad" id="n">No</button>`
-          : `<button id="flip">Mark as ${ok ? 'wrong' : 'correct'} instead</button> <button class="primary" id="next">Next</button>`);
+          : `<button id="flip">Mark as ${ok ? 'wrong' : 'correct'} instead</button> <button class="primary" id="next">${nextLabel()}</button>`);
       if (ok === null) { $('y').onclick = () => finish(true); $('n').onclick = () => finish(false); }
       else {
         $('flip').onclick = () => showResult(!ok, feedback, info);
