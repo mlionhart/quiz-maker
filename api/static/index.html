@@ -27,6 +27,17 @@
   button.ai:hover:not(:disabled) { border-color:var(--b); background:color-mix(in srgb, var(--b) 12%, transparent); }
   button.del:hover:not(:disabled) { border-color:var(--r); background:color-mix(in srgb, var(--r) 12%, transparent); }
   button.kind { width:100%; text-align:left; }
+  .kindrow { display:flex; gap:8px; }
+  .kindrow .kind { flex:1; width:auto; min-width:0; }
+  .kindrow .grade { flex:none; white-space:nowrap; }
+  button.kind, button.grade { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .arrow { align-self:stretch; display:flex; align-items:center; margin:-8px -14px -8px 0; padding:0 12px 0 8px; border-radius:0 7px 7px 0; opacity:.7; }
+  .arrow:hover { opacity:1; background:color-mix(in srgb, var(--fg) 10%, transparent); }
+  .menu { position:absolute; z-index:30; background:var(--card); border:1px solid var(--line); border-radius:8px; padding:4px; box-shadow:0 8px 24px rgba(0,0,0,.45); }
+  .menu button { display:block; width:100%; text-align:left; border:0; background:transparent; padding:8px 10px; }
+  .menu button:hover { background:var(--btn); }
+  .menu small { display:block; color:#888; font-size:.8rem; }
+  .menu button.on span::before { content:"✓ "; }
   .savebar { position:sticky; bottom:0; display:flex; gap:12px; align-items:center; margin:0 -16px; padding:12px 16px; background:var(--bg); border-top:1px solid var(--line); }
   button.primary { background:var(--acc); color:#fff; border-color:var(--acc); }
   button.ok { background:var(--ok); color:#fff; border-color:var(--ok); }
@@ -85,7 +96,7 @@
 
     <div class="card">
       <h2>Questions</h2>
-      <p class="muted">Pick a type for each question. Written answers are graded by AI, and the answer is optional: without one, the AI uses the quiz's source material, or else general knowledge. For multiple choice, type the wrong answers separated by | or leave them blank and use the AI fill button, which also writes a short explanation.</p>
+      <p class="muted">Pick a type for each question. For Written questions, the small button beside the type sets grading (hover it for details): Exact (must match the answer, no AI), Standard (AI: flexible wording, facts must be right) or Gist (AI: the main idea is enough). For AI grading the answer is optional: without one, the AI uses the quiz's source material, or else general knowledge. For multiple choice, type the wrong answers separated by | or leave them blank and use the AI fill button, which also writes a short explanation.</p>
       <p class="muted">Saving also fills in any missing wrong answers and explanations, so the button below is optional.</p>
       <div class="btns" style="margin:0 0 12px">
         <button id="add-q" class="add">+ Add question</button>
@@ -165,38 +176,92 @@ $('tab-list').onclick = renderList;
 $('tab-new').onclick = () => edit(null);
 
 // ---------- editor ----------
-// Question-type toggle (button.kind): one click flips it. The value lives in dataset.value, and a 'change' event fires.
-const KINDS = { written: 'Written (AI-graded)', choice: 'Multiple choice' };
-function setKind(btn, v) {
+// Two toggle buttons share this code. button.kind picks the question type and button.grade picks how a written
+// question is graded (Exact -> Standard -> Gist). Clicking the label cycles to the next option; clicking the arrow
+// at the right opens a menu of all options. The value lives in dataset.value, and a 'change' event fires.
+const TOGGLES = {
+  kind: {
+    written: { label: 'Written', note: 'Student types the answer' },
+    choice: { label: 'Multiple choice', note: 'Student picks from options' },
+  },
+  grade: {
+    exact: { label: 'Exact', note: 'Must match the answer, no AI', tip: 'Exact: must match the answer (ignores capitalization, extra spaces and end punctuation). No AI.' },
+    standard: { label: 'Standard', note: 'Flexible wording, facts must be right', tip: 'Standard: AI accepts different wording and spelling, but the facts must be right.' },
+    gist: { label: 'Gist', note: 'The main idea is enough', tip: "Gist: AI accepts the main idea in the student's own words." },
+  },
+};
+const toggleType = btn => btn.classList.contains('grade') ? 'grade' : 'kind';
+function setToggle(btn, v) {
+  const o = TOGGLES[toggleType(btn)][v];
   btn.dataset.value = v;
-  btn.textContent = KINDS[v];
+  btn.title = o.tip || '';
+  btn.innerHTML = `<span class="lbl">${esc(o.label)}</span><span class="arrow">▾</span>`;
+}
+setToggle($('gen-kind'), 'choice');
+
+let menu = null;
+const closeMenu = () => { if (menu) menu.remove(); menu = null; };
+function openMenu(btn) {
+  const sameButton = menu && menu.btn === btn;
+  closeMenu();
+  if (sameButton) return;
+  menu = document.createElement('div');
+  menu.className = 'menu';
+  menu.btn = btn;
+  menu.innerHTML = Object.entries(TOGGLES[toggleType(btn)]).map(([v, o]) =>
+    `<button type="button" data-v="${v}" class="${v === btn.dataset.value ? 'on' : ''}"><span>${esc(o.label)}</span><small>${esc(o.note)}</small></button>`).join('');
+  menu.onclick = ev => {
+    const o = ev.target.closest('button[data-v]');
+    if (!o) return;
+    setToggle(btn, o.dataset.v);
+    btn.dispatchEvent(new Event('change'));
+    closeMenu();
+  };
+  document.body.appendChild(menu);
+  const r = btn.getBoundingClientRect();
+  menu.style.minWidth = r.width + 'px';
+  menu.style.left = Math.max(8, Math.min(r.left, innerWidth - menu.offsetWidth - 8)) + scrollX + 'px';
+  menu.style.top = r.bottom + scrollY + 4 + 'px';
 }
 document.addEventListener('click', e => {
-  const b = e.target.closest('button.kind');
+  if (menu && !menu.contains(e.target) && !e.target.closest('.arrow')) closeMenu();
+  const b = e.target.closest('button.kind, button.grade');
   if (!b) return;
-  setKind(b, b.dataset.value === 'choice' ? 'written' : 'choice');
+  if (e.target.closest('.arrow')) return openMenu(b);
+  const keys = Object.keys(TOGGLES[toggleType(b)]);
+  setToggle(b, keys[(keys.indexOf(b.dataset.value) + 1) % keys.length]);
   b.dispatchEvent(new Event('change'));
 });
-function addRow(q = '', a = '', d = [], kind = 'written', e = '') {
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeMenu();
+  const b = e.target.closest && e.target.closest('button.kind, button.grade');
+  if (b && e.key === 'ArrowDown') { e.preventDefault(); openMenu(b); }
+});
+window.addEventListener('resize', closeMenu);
+function addRow(q = '', a = '', d = [], kind = 'written', e = '', grading = 'standard') {
   const r = document.createElement('div');
   r.className = 'row card';
   r.innerHTML = `<div>
-      <button type="button" class="kind k"></button>
+      <div class="kindrow"><button type="button" class="kind k"></button><button type="button" class="grade g"></button></div>
       <input class="q" placeholder="Question" value="${esc(q)}" style="margin-top:6px">
       <input class="a" placeholder="Answer" value="${esc(a)}" style="margin-top:6px">
       <input class="d" placeholder="Wrong answers: one | two | three" value="${esc(d.join(' | '))}" style="margin-top:6px">
       <input class="e" placeholder="Explanation shown after answering (optional)" value="${esc(e)}" style="margin-top:6px">
     </div><button class="del" title="Remove">✕</button>`;
   r.querySelector('button.del').onclick = () => r.remove();
-  const k = r.querySelector('.k'), dIn = r.querySelector('.d');
-  setKind(k, kind);
+  const k = r.querySelector('.k'), g = r.querySelector('.g'), dIn = r.querySelector('.d');
+  setToggle(k, kind);
+  setToggle(g, grading);
   const sync = () => {
     const choice = k.dataset.value === 'choice';
     dIn.classList.toggle('hidden', !choice);
     r.querySelector('.e').classList.toggle('hidden', !choice);
-    r.querySelector('.a').placeholder = choice ? 'Correct answer' : 'Answer (optional: AI uses source or general knowledge)';
+    g.classList.toggle('hidden', choice);
+    r.querySelector('.a').placeholder = choice ? 'Correct answer'
+      : g.dataset.value === 'exact' ? 'Answer (required for Exact grading)'
+      : 'Answer (optional: AI uses source or general knowledge)';
   };
-  k.onchange = sync; sync();
+  k.onchange = sync; g.onchange = sync; sync();
   $('qs').appendChild(r);
   return r;
 }
@@ -208,6 +273,7 @@ const readRow = r => {
     kind,
     d: kind === 'choice' ? r.querySelector('.d').value.split('|').map(s => s.trim()).filter(Boolean) : [],
     e: kind === 'choice' ? r.querySelector('.e').value.trim() : '',
+    grading: kind === 'written' ? r.querySelector('.g').dataset.value : 'standard',
   };
 };
 const readRows = () => [...$('qs').children].map(readRow);
@@ -218,7 +284,7 @@ async function edit(id) {
     $('title').value = quiz ? quiz.title : '';
     $('source').value = quiz ? quiz.source : '';
     $('qs').innerHTML = '';
-    (quiz ? quiz.items : [{q:'',a:'',d:[],kind:'written'}]).forEach(i => addRow(i.q, i.a, i.d, i.kind, i.e));
+    (quiz ? quiz.items : [{q:'',a:'',d:[],kind:'written'}]).forEach(i => addRow(i.q, i.a, i.d, i.kind, i.e, i.grading));
     show('new');
   } catch (e) { fail(e); }
 }
@@ -263,6 +329,7 @@ $('save').onclick = async () => {
   const check = readRows().filter(i => i.q);
   if (!check.length) return alert('Add at least one question.');
   if (check.some(i => i.kind === 'choice' && !i.a)) return alert('Multiple-choice questions need a correct answer.');
+  if (check.some(i => i.kind === 'written' && i.grading === 'exact' && !i.a)) return alert('Written questions with Exact grading need an answer to compare against.');
   $('save').disabled = true;
   try {
     try { await fillMissing(); }
@@ -372,7 +439,7 @@ async function play(id) {
       if (!response) return showResult(false, 'No answer given.');
       $('ans').textContent = 'Grading...';
       try {
-        const r = await api('/grade', 'POST', { q: it.q, a: it.a, response, quiz_id: quiz.id });
+        const r = await api('/grade', 'POST', { q: it.q, a: it.a, response, quiz_id: quiz.id, grading: it.grading || 'standard' });
         showResult(r.correct, r.feedback, r);
       } catch (e) { showResult(null, 'AI grading unavailable: ' + e.message); }
     };

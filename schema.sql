@@ -13,7 +13,8 @@ CREATE TABLE questions (
     answer      TEXT NOT NULL,
     distractors JSONB NOT NULL DEFAULT '[]',
     kind        TEXT NOT NULL DEFAULT 'written',
-    explanation TEXT NOT NULL DEFAULT ''
+    explanation TEXT NOT NULL DEFAULT '',
+    grading     TEXT NOT NULL DEFAULT 'standard'
 );
 
 CREATE INDEX questions_quiz_id_idx ON questions (quiz_id, position);
