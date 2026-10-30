@@ -38,6 +38,8 @@
   .menu button:hover { background:var(--btn); }
   .menu small { display:block; color:#888; font-size:.8rem; }
   .menu button.on span::before { content:"✓ "; }
+  input[type=range] { padding:0; border:0; background:transparent; accent-color:var(--acc); }
+  input[type=file]::file-selector-button { font:inherit; padding:6px 12px; margin-right:10px; border-radius:6px; border:1px solid var(--line); background:var(--btn); color:var(--fg); cursor:pointer; }
   .savebar { position:sticky; bottom:0; display:flex; gap:12px; align-items:center; margin:0 -16px; padding:12px 16px; background:var(--bg); border-top:1px solid var(--line); }
   button.primary { background:var(--acc); color:#fff; border-color:var(--acc); }
   button.ok { background:var(--ok); color:#fff; border-color:var(--ok); }
@@ -82,11 +84,18 @@
     </details>
 
     <details class="card">
-      <summary>Generate with AI from pasted text</summary>
-      <label for="src">Paste text</label>
+      <summary>Generate with AI from a file or pasted text</summary>
+      <label for="file">Upload a file (optional)</label>
+      <input type="file" id="file" accept=".txt,.md,.markdown,.pdf,.docx">
+      <p class="muted">Accepted: .txt, .md, .markdown, .pdf, .docx (up to 10 MB). Scanned or image-only PDFs have no text to read. <span id="file-status"></span></p>
+      <label for="src">Or paste text</label>
       <textarea id="src" rows="6" placeholder="Paste notes, an article, a chapter..."></textarea>
       <label for="gen-kind">Question type</label>
-      <button type="button" id="gen-kind" class="kind" data-value="choice">Multiple choice</button>
+      <button type="button" id="gen-kind" class="kind gen" data-value="auto">Auto</button>
+      <div id="mix-row" class="hidden">
+        <label for="mix">Multiple choice <b id="mix-c">50</b>% · Written <b id="mix-w">50</b>%</label>
+        <input type="range" id="mix" min="0" max="100" step="5" value="50">
+      </div>
       <label for="n">How many questions</label>
       <input id="n" type="number" value="10" min="1" max="50">
       <label><input type="checkbox" id="keep-src" checked style="width:auto"> Also save the pasted text as this quiz's source material</label>
@@ -189,15 +198,23 @@ const TOGGLES = {
     standard: { label: 'Standard', note: 'Flexible wording, facts must be right', tip: 'Standard: AI accepts different wording and spelling, but the facts must be right.' },
     gist: { label: 'Gist', note: 'The main idea is enough', tip: "Gist: AI accepts the main idea in the student's own words." },
   },
+  gen: {   // question type for the Generate section
+    auto: { label: 'Auto', note: 'AI picks the best type for each question' },
+    choice: { label: 'Multiple choice', note: 'All multiple choice' },
+    written: { label: 'Written', note: 'All written' },
+    mix: { label: 'Mix', note: 'Set the percentage of each' },
+  },
 };
-const toggleType = btn => btn.classList.contains('grade') ? 'grade' : 'kind';
+const toggleType = btn => btn.classList.contains('grade') ? 'grade' : btn.classList.contains('gen') ? 'gen' : 'kind';
 function setToggle(btn, v) {
   const o = TOGGLES[toggleType(btn)][v];
   btn.dataset.value = v;
   btn.title = o.tip || '';
   btn.innerHTML = `<span class="lbl">${esc(o.label)}</span><span class="arrow">▾</span>`;
 }
-setToggle($('gen-kind'), 'choice');
+setToggle($('gen-kind'), 'auto');
+$('gen-kind').addEventListener('change', () => $('mix-row').classList.toggle('hidden', $('gen-kind').dataset.value !== 'mix'));
+$('mix').oninput = () => { $('mix-c').textContent = $('mix').value; $('mix-w').textContent = 100 - $('mix').value; };
 
 let menu = null;
 const closeMenu = () => { if (menu) menu.remove(); menu = null; };
@@ -343,15 +360,32 @@ $('save').onclick = async () => {
 };
 
 // ---------- AI generation ----------
+const MAX_TEXT = 150000;   // keep in sync with MAX_TEXT in main.py
+$('file').onchange = async () => {
+  const f = $('file').files[0];
+  if (!f) return;
+  if ($('src').value.trim() && !confirm('Replace the pasted text with the text from this file?')) { $('file').value = ''; return; }
+  $('file-status').textContent = 'Reading...';
+  try {
+    const res = await fetch('/api/extract?name=' + encodeURIComponent(f.name), { method: 'POST', body: f });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || res.status);
+    $('src').value = data.text;
+    $('file-status').textContent = `Loaded ${f.name} (${data.text.length.toLocaleString()} characters).`;
+  } catch (e) { $('file-status').textContent = 'Error: ' + e.message; }
+  $('file').value = '';
+};
 $('gen').onclick = async () => {
   const text = $('src').value.trim(), n = +$('n').value || 10, kind = $('gen-kind').dataset.value;
-  if (!text) return alert('Paste some text first.');
+  if (!text) return alert('Upload a file or paste some text first.');
+  if (text.length > MAX_TEXT) return alert(`The text has ${text.length.toLocaleString()} characters; the limit is ${MAX_TEXT.toLocaleString()}. Use a smaller part of it.`);
   $('gen').disabled = true; $('gen-status').textContent = 'Generating...';
   try {
-    const { items, usage } = await api('/generate', 'POST', { text, n, kind });
+    const { items, usage } = await api('/generate', 'POST', { text, n, kind, choice_pct: +$('mix').value });
     items.forEach(i => addRow(i.q, i.a, i.d || [], i.kind, i.e || ''));
     if ($('keep-src').checked && !$('source').value.trim()) $('source').value = text;
-    $('gen-status').textContent = `Added ${items.length} questions (${usage.input} in / ${usage.output} out tokens).`;
+    const c = items.filter(i => i.kind === 'choice').length;
+    $('gen-status').textContent = `Added ${items.length} questions (${c} multiple choice, ${items.length - c} written; ${usage.input} in / ${usage.output} out tokens).`;
   } catch (e) { $('gen-status').textContent = 'Error: ' + e.message; }
   $('gen').disabled = false;
 };
