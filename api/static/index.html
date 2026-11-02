@@ -550,7 +550,7 @@ async function play(id) {
       } catch (e) { showResult(null, 'AI grading unavailable: ' + e.message); }
     };
     $('reveal').onclick = check;
-    $('guess').onkeydown = e => { if (e.key === 'Enter') check(); };
+    $('guess').onkeydown = e => { if (e.key === 'Enter' && !e.repeat) check(); };
     $('guess').focus();
   };
 
