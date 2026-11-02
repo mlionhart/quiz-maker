@@ -76,6 +76,11 @@ class DistractorsIn(BaseModel):
     items: list[Item]
 
 
+class AnswersIn(BaseModel):
+    questions: list[str] = Field(max_length=100)
+    source: str = Field("", max_length=MAX_TEXT)
+
+
 class GradeIn(BaseModel):
     q: str
     a: str = ""
@@ -283,6 +288,26 @@ def distractors(body: DistractorsIn):
     if not isinstance(result, list) or len(result) != len(body.items) or not all(isinstance(r, dict) for r in result):
         raise HTTPException(502, "Model returned the wrong number of answer sets")
     return {"items": [{"d": [str(x) for x in r.get("d", [])][:3], "e": str(r.get("e", ""))} for r in result]}
+
+
+@app.post("/api/answers")
+def answers(body: AnswersIn):
+    """Drafts answer keys for written questions the author left blank. The author can edit them before saving."""
+    questions = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(body.questions))
+    source = body.source.strip()
+    prompt = (
+        "Write the correct answer to each quiz question below, in the form a student would be expected to give: "
+        "short and direct (a word, a phrase or one sentence), with no explanation. "
+        + ("Use the source material when it covers the question, otherwise use general knowledge. " if source else "Use your general knowledge. ")
+        + "If you are not sure of an answer, give your best answer anyway. "
+        'Respond with ONLY a JSON array of strings, one per question, same order, like ["...", "..."].\n\n'
+        + (f"<source_material>\n{source}\n</source_material>\n\n" if source else "")
+        + f"<questions>\n{questions}\n</questions>"
+    )
+    result, _ = ask_json(prompt)
+    if not isinstance(result, list) or len(result) != len(body.questions):
+        raise HTTPException(502, "Model returned the wrong number of answers")
+    return {"answers": [str(x).strip() for x in result]}
 
 
 class ExplainIn(BaseModel):

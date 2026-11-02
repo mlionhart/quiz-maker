@@ -48,6 +48,8 @@
   input, textarea, select { font:inherit; width:100%; padding:8px; border-radius:8px; border:1px solid var(--line); background:var(--field); color:var(--fg); }
   input:focus, textarea:focus, select:focus { outline:none; border-color:var(--acc); }
   textarea { resize:vertical; }
+  textarea.auto { resize:none; overflow:hidden; display:block; }
+  textarea.auto.hidden { display:none; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:12px; }
   .row { display:flex; gap:8px; align-items:center; } .row > * { flex:1; } .row > button { flex:none; }
   .btns { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
@@ -90,8 +92,8 @@
       <p class="muted">Accepted: .txt, .md, .markdown, .pdf, .docx (up to 10 MB). Scanned or image-only PDFs have no text to read. <span id="file-status"></span></p>
       <label for="src">Or paste text</label>
       <textarea id="src" rows="6" placeholder="Paste notes, an article, a chapter..."></textarea>
-      <label for="gen-kind">Question type</label>
-      <button type="button" id="gen-kind" class="kind gen" data-value="auto">Auto</button>
+      <label id="gen-kind-label">Question type</label>
+      <button type="button" id="gen-kind" class="kind gen" data-value="auto" aria-labelledby="gen-kind-label">Auto</button>
       <div id="mix-row" class="hidden">
         <label for="mix">Multiple choice <b id="mix-c">50</b>% · Written <b id="mix-w">50</b>%</label>
         <input type="range" id="mix" min="0" max="100" step="5" value="50">
@@ -106,10 +108,10 @@
     <div class="card">
       <h2>Questions</h2>
       <p class="muted">Pick a type for each question. For Written questions, the small button beside the type sets grading (hover it for details): Exact (must match the answer, no AI), Standard (AI: flexible wording, facts must be right) or Gist (AI: the main idea is enough). For AI grading the answer is optional: without one, the AI uses the quiz's source material, or else general knowledge. For multiple choice, type the wrong answers separated by | or leave them blank and use the AI fill button, which also writes a short explanation.</p>
-      <p class="muted">Saving also fills in any missing wrong answers and explanations, so the button below is optional.</p>
+      <p class="muted">Saving also fills in missing wrong answers and explanations. If a Written answer is blank, the AI drafts one (from the source material or general knowledge) and stops so you can check it before saving. Exact questions always need your own answer.</p>
       <div class="btns" style="margin:0 0 12px">
         <button id="add-q" class="add">+ Add question</button>
-        <button id="fill-d" class="ai">Fill missing wrong answers and explanations with AI</button>
+        <button id="fill-d" class="ai">Fill missing answers, wrong answers and explanations with AI</button>
       </div>
       <div id="qs"></div>
     </div>
@@ -260,11 +262,15 @@ function addRow(q = '', a = '', d = [], kind = 'written', e = '', grading = 'sta
   r.className = 'row card';
   r.innerHTML = `<div>
       <div class="kindrow"><button type="button" class="kind k"></button><button type="button" class="grade g"></button></div>
-      <input class="q" placeholder="Question" value="${esc(q)}" style="margin-top:6px">
-      <input class="a" placeholder="Answer" value="${esc(a)}" style="margin-top:6px">
-      <input class="d" placeholder="Wrong answers: one | two | three" value="${esc(d.join(' | '))}" style="margin-top:6px">
-      <input class="e" placeholder="Explanation shown after answering (optional)" value="${esc(e)}" style="margin-top:6px">
+      <textarea class="q auto" rows="1" placeholder="Question" style="margin-top:6px">${esc(q)}</textarea>
+      <textarea class="a auto" rows="1" placeholder="Answer" style="margin-top:6px">${esc(a)}</textarea>
+      <textarea class="d auto" rows="1" placeholder="Wrong answers: one | two | three" style="margin-top:6px">${esc(d.join(' | '))}</textarea>
+      <textarea class="e auto" rows="1" placeholder="Explanation shown after answering (optional)" style="margin-top:6px">${esc(e)}</textarea>
     </div><button class="del" title="Remove">✕</button>`;
+  r.querySelectorAll('textarea.auto').forEach(t => {
+    t.oninput = () => grow(t);
+    t.onkeydown = ev => { if (ev.key === 'Enter') ev.preventDefault(); };   // single-line values; the box grows by wrapping
+  });
   r.querySelector('button.del').onclick = () => r.remove();
   const k = r.querySelector('.k'), g = r.querySelector('.g'), dIn = r.querySelector('.d');
   setToggle(k, kind);
@@ -278,10 +284,15 @@ function addRow(q = '', a = '', d = [], kind = 'written', e = '', grading = 'sta
       : g.dataset.value === 'exact' ? 'Answer (required for Exact grading)'
       : 'Answer (optional: AI uses source or general knowledge)';
   };
-  k.onchange = sync; g.onchange = sync; sync();
+  k.onchange = () => { sync(); growRow(r); }; g.onchange = sync; sync();
   $('qs').appendChild(r);
+  growRow(r);
   return r;
 }
+// Text boxes grow to show their whole text. Hidden or detached boxes have no height to measure, so they are skipped.
+const grow = t => { t.style.height = 'auto'; if (t.scrollHeight) t.style.height = t.scrollHeight + 2 + 'px'; };
+const growRow = r => r.querySelectorAll('textarea.auto').forEach(grow);
+window.addEventListener('resize', () => document.querySelectorAll('#qs .row').forEach(growRow));
 const readRow = r => {
   const kind = r.querySelector('.k').dataset.value;
   return {
@@ -303,6 +314,7 @@ async function edit(id) {
     $('qs').innerHTML = '';
     (quiz ? quiz.items : [{q:'',a:'',d:[],kind:'written'}]).forEach(i => addRow(i.q, i.a, i.d, i.kind, i.e, i.grading));
     show('new');
+    [...$('qs').children].forEach(growRow);   // rows added while the view was hidden could not be measured
   } catch (e) { fail(e); }
 }
 // New questions go at the top, next to the Add button, so there is no scrolling to reach them.
@@ -311,32 +323,44 @@ $('add-q').onclick = () => {
   $('qs').prepend(r);
   r.querySelector('.q').focus();
 };
-// Fills wrong answers and explanations for multiple-choice rows that lack them. Returns how many rows it filled.
-// Wrong answers the user already typed are kept; the AI only tops them up to 3.
+// Fills what the AI can: wrong answers and explanations for multiple-choice rows (the user's own wrong answers are
+// kept; the AI only tops them up to 3), and blank answers for written rows that are not Exact.
+// Returns how many rows of each kind it filled.
 async function fillMissing() {
-  const rows = [...$('qs').children].filter(r => {
+  const rows = [...$('qs').children];
+  const choiceRows = rows.filter(r => {
     const x = readRow(r);
     return x.kind === 'choice' && x.q && x.a && (x.d.length < 3 || !x.e);
   });
-  if (!rows.length) return 0;
-  $('fill-status').textContent = 'Generating...';
-  const items = rows.map(r => ({ q: r.querySelector('.q').value.trim(), a: r.querySelector('.a').value.trim() }));
-  const { items: filled } = await api('/distractors', 'POST', { items });
-  rows.forEach((r, i) => {
+  const writtenRows = rows.filter(r => {
     const x = readRow(r);
-    if (x.d.length < 3) {
-      const extra = filled[i].d.filter(w => w !== x.a && !x.d.includes(w));
-      r.querySelector('.d').value = [...x.d, ...extra].slice(0, 3).join(' | ');
-    }
-    if (!x.e) r.querySelector('.e').value = filled[i].e;
+    return x.kind === 'written' && x.grading !== 'exact' && x.q && !x.a;
   });
-  return rows.length;
+  if (choiceRows.length || writtenRows.length) $('fill-status').textContent = 'Generating...';
+  if (choiceRows.length) {
+    const items = choiceRows.map(r => ({ q: r.querySelector('.q').value.trim(), a: r.querySelector('.a').value.trim() }));
+    const { items: filled } = await api('/distractors', 'POST', { items });
+    choiceRows.forEach((r, i) => {
+      const x = readRow(r);
+      if (x.d.length < 3) {
+        const extra = filled[i].d.filter(w => w !== x.a && !x.d.includes(w));
+        r.querySelector('.d').value = [...x.d, ...extra].slice(0, 3).join(' | ');
+      }
+      if (!x.e) r.querySelector('.e').value = filled[i].e;
+      growRow(r);
+    });
+  }
+  if (writtenRows.length) {
+    const { answers } = await api('/answers', 'POST', { questions: writtenRows.map(r => r.querySelector('.q').value.trim()), source: $('source').value.trim() });
+    writtenRows.forEach((r, i) => { r.querySelector('.a').value = answers[i]; growRow(r); });
+  }
+  return { choice: choiceRows.length, written: writtenRows.length };
 }
 $('fill-d').onclick = async () => {
   $('fill-d').disabled = true; $('fill-status').textContent = '';
   try {
     const n = await fillMissing();
-    $('fill-status').textContent = n ? `Filled ${n}.` : 'Nothing to fill.';
+    $('fill-status').textContent = n.choice + n.written ? `Filled ${n.choice + n.written}.${n.written ? ' Check the answers the AI drafted.' : ''}` : 'Nothing to fill.';
   } catch (e) { $('fill-status').textContent = 'Error: ' + e.message; }
   $('fill-d').disabled = false;
 };
@@ -349,8 +373,12 @@ $('save').onclick = async () => {
   if (check.some(i => i.kind === 'written' && i.grading === 'exact' && !i.a)) return alert('Written questions with Exact grading need an answer to compare against.');
   $('save').disabled = true;
   try {
-    try { await fillMissing(); }
-    catch (e) { if (!confirm('The AI could not fill in the missing wrong answers: ' + e.message + '\n\nSave anyway?')) return; }
+    try {
+      const n = await fillMissing();
+      // An AI-drafted answer becomes the grading key, so let the user look at it before it is saved.
+      if (n.written) { $('fill-status').textContent = ''; return alert(`The AI drafted answers for ${n.written} written question${n.written > 1 ? 's' : ''}. Check or edit them, then press Save again.`); }
+    }
+    catch (e) { if (!confirm('The AI could not fill in the missing answers: ' + e.message + '\n\nSave anyway?')) return; }
     const items = readRows().filter(i => i.q);
     await (editingId ? api('/quizzes/' + editingId, 'PUT', { title, source, items }) : api('/quizzes', 'POST', { title, source, items }));
     $('fill-status').textContent = '';
