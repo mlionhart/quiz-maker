@@ -458,12 +458,9 @@ async function play(id) {
         + (shown ? `<p>${it.a ? 'Answer' : "AI's answer"}: <strong>${esc(shown)}</strong></p>` : '')
         + (ok === null
           ? `<p>Did you get it right?</p><button class="ok" id="y">Yes</button> <button class="bad" id="n">No</button>`
-          : `<button id="flip">Mark as ${ok ? 'wrong' : 'correct'} instead</button> <button class="primary" id="next">${nextLabel()}</button>`);
+          : `<button class="primary" id="next">${nextLabel()}</button>`);
       if (ok === null) { $('y').onclick = () => finish(true); $('n').onclick = () => finish(false); }
-      else {
-        $('flip').onclick = () => showResult(!ok, feedback, info);
-        $('next').onclick = () => finish(ok); $('next').focus();
-      }
+      else { $('next').onclick = () => finish(ok); $('next').focus(); }
     };
 
     const check = async () => {
