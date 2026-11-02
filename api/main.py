@@ -19,6 +19,9 @@ from pypdf import PdfReader
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 MODEL = os.getenv("QUIZ_MODEL", "claude-haiku-5-5")
+# Models the Settings page may choose from. MODEL is the default for every call that does not pick one.
+MODELS = {"claude-haiku-5-5": "Haiku 5.5: fast and cheapest", "claude-sonnet-5-5": "Sonnet 5.5: more accurate, costs more"}
+MODELS.setdefault(MODEL, MODEL)
 MAX_UPLOAD = 10 * 1024 * 1024   # bytes, for an uploaded file
 MAX_TEXT = 150_000              # characters of source text sent to the model in one generate call
 
@@ -79,6 +82,7 @@ class DistractorsIn(BaseModel):
 class AnswersIn(BaseModel):
     questions: list[str] = Field(max_length=100)
     source: str = Field("", max_length=MAX_TEXT)
+    model: str = ""   # empty means the server default
 
 
 class GradeIn(BaseModel):
@@ -103,11 +107,11 @@ def save_items(cur, quiz_id, items):
     )
 
 
-def ask_json(prompt, max_tokens=8000):
+def ask_json(prompt, max_tokens=8000, model=None):
     """Send a prompt to Claude and parse the JSON array/object in its reply."""
     try:
         resp = anthropic.Anthropic().messages.create(
-            model=MODEL,
+            model=model or MODEL,
             max_tokens=max_tokens,
             output_config={"effort": "low"},
             messages=[{"role": "user", "content": prompt}],
@@ -120,6 +124,11 @@ def ask_json(prompt, max_tokens=8000):
         raise HTTPException(502, f"Claude API error: {e}")
     except ValueError:
         raise HTTPException(502, "Could not parse the model's response as JSON")
+
+
+@app.get("/api/settings")
+def settings():
+    return {"models": [{"id": k, "label": v} for k, v in MODELS.items()], "default": MODEL}
 
 
 @app.get("/api/quizzes")
@@ -293,6 +302,8 @@ def distractors(body: DistractorsIn):
 @app.post("/api/answers")
 def answers(body: AnswersIn):
     """Drafts answer keys for written questions the author left blank. The author can edit them before saving."""
+    if body.model and body.model not in MODELS:
+        raise HTTPException(422, "Unknown model")
     questions = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(body.questions))
     source = body.source.strip()
     prompt = (
@@ -304,7 +315,7 @@ def answers(body: AnswersIn):
         + (f"<source_material>\n{source}\n</source_material>\n\n" if source else "")
         + f"<questions>\n{questions}\n</questions>"
     )
-    result, _ = ask_json(prompt)
+    result, _ = ask_json(prompt, model=body.model or None)
     if not isinstance(result, list) or len(result) != len(body.questions):
         raise HTTPException(502, "Model returned the wrong number of answers")
     return {"answers": [str(x).strip() for x in result]}

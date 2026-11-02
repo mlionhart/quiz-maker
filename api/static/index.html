@@ -68,10 +68,35 @@
   <nav>
     <button id="tab-list" class="active">My quizzes</button>
     <button id="tab-new">New quiz</button>
-    <button id="theme" title="Switch light/dark" style="margin-left:auto">◐</button>
+    <button id="tab-settings" style="margin-left:auto">Settings &amp; help</button>
+    <button id="theme" title="Switch light/dark">◐</button>
   </nav>
 
   <section id="view-list"></section>
+
+  <section id="view-settings" class="hidden">
+    <div class="card">
+      <h2>Settings</h2>
+      <label for="set-model">AI model for drafting blank answers</label>
+      <select id="set-model"></select>
+      <p class="muted">Used when the AI fills in a Written answer you left blank. A more accurate model costs more per use. Saved in this browser.</p>
+    </div>
+    <div class="card">
+      <h2>Help</h2>
+      <details>
+        <summary>Question types and grading</summary>
+        <p class="muted">Pick a type for each question. For Written questions, the small button beside the type sets grading (hover it for details): Exact (must match the answer, no AI), Standard (AI: flexible wording, facts must be right) or Gist (AI: the main idea is enough). For AI grading the answer is optional: without one, the AI uses the quiz's source material, or else general knowledge.</p>
+      </details>
+      <details>
+        <summary>Wrong answers and explanations</summary>
+        <p class="muted">For multiple choice, type the wrong answers separated by | or leave them blank and use the AI fill button, which also writes a short explanation. Saving also fills in anything missing.</p>
+      </details>
+      <details>
+        <summary>Blank written answers</summary>
+        <p class="muted">If a Written answer is blank, the AI drafts one (from the source material or general knowledge) and stops so you can check it before saving. Exact questions always need your own answer.</p>
+      </details>
+    </div>
+  </section>
 
   <section id="view-new" class="hidden">
     <div class="card">
@@ -107,8 +132,7 @@
 
     <div class="card">
       <h2>Questions</h2>
-      <p class="muted">Pick a type for each question. For Written questions, the small button beside the type sets grading (hover it for details): Exact (must match the answer, no AI), Standard (AI: flexible wording, facts must be right) or Gist (AI: the main idea is enough). For AI grading the answer is optional: without one, the AI uses the quiz's source material, or else general knowledge. For multiple choice, type the wrong answers separated by | or leave them blank and use the AI fill button, which also writes a short explanation.</p>
-      <p class="muted">Saving also fills in missing wrong answers and explanations. If a Written answer is blank, the AI drafts one (from the source material or general knowledge) and stops so you can check it before saving. Exact questions always need your own answer.</p>
+      <p class="muted">Not sure what the buttons do? See Settings &amp; help.</p>
       <div class="btns" style="margin:0 0 12px">
         <button id="add-q" class="add">+ Add question</button>
         <button id="fill-d" class="ai">Fill missing answers, wrong answers and explanations with AI</button>
@@ -154,10 +178,27 @@ async function api(path, method = 'GET', body) {
 const fail = e => alert('Error: ' + e.message);
 
 function show(v) {
-  for (const n of ['list','new','play']) $('view-'+n).classList.toggle('hidden', n !== v);
+  for (const n of ['list','new','play','settings']) $('view-'+n).classList.toggle('hidden', n !== v);
   $('tab-list').classList.toggle('active', v === 'list');
   $('tab-new').classList.toggle('active', v === 'new');
+  $('tab-settings').classList.toggle('active', v === 'settings');
 }
+
+// ---------- settings ----------
+// Settings live in this browser (localStorage); the server checks any model it is sent against its own list.
+const getAnswerModel = () => { try { return localStorage.getItem('answerModel') || ''; } catch { return ''; } };
+async function openSettings() {
+  show('settings');
+  try {
+    const s = await api('/settings');
+    const def = s.models.find(m => m.id === s.default);
+    $('set-model').innerHTML = `<option value="">Default (${esc(def ? def.label : s.default)})</option>`
+      + s.models.map(m => `<option value="${esc(m.id)}">${esc(m.label)}</option>`).join('');
+    $('set-model').value = getAnswerModel();
+  } catch (e) { $('set-model').innerHTML = '<option value="">Default</option>'; }
+}
+$('tab-settings').onclick = openSettings;
+$('set-model').onchange = () => { try { localStorage.setItem('answerModel', $('set-model').value); } catch {} };
 
 // ---------- list ----------
 async function renderList() {
@@ -351,7 +392,7 @@ async function fillMissing() {
     });
   }
   if (writtenRows.length) {
-    const { answers } = await api('/answers', 'POST', { questions: writtenRows.map(r => r.querySelector('.q').value.trim()), source: $('source').value.trim() });
+    const { answers } = await api('/answers', 'POST', { questions: writtenRows.map(r => r.querySelector('.q').value.trim()), source: $('source').value.trim(), model: getAnswerModel() });
     writtenRows.forEach((r, i) => { r.querySelector('.a').value = answers[i]; growRow(r); });
   }
   return { choice: choiceRows.length, written: writtenRows.length };

@@ -26,8 +26,10 @@ def ai(monkeypatch):
         prompt = ""
         max_tokens = None
 
-        def __call__(self, prompt, max_tokens=8000):
-            self.prompt, self.max_tokens = prompt, max_tokens
+        model = None
+
+        def __call__(self, prompt, max_tokens=8000, model=None):
+            self.prompt, self.max_tokens, self.model = prompt, max_tokens, model
 
             class Usage:
                 input_tokens, output_tokens = 1, 2

@@ -11,6 +11,24 @@ def test_uses_source_when_given(client, ai):
     assert "<source_material>\nNotes about hosting\n</source_material>" in ai.prompt
 
 
+def test_model_choice(client, ai):
+    ai.reply = ["x"]
+    client.post("/api/answers", json={"questions": ["Q?"]})
+    assert ai.model is None   # server default
+    client.post("/api/answers", json={"questions": ["Q?"], "model": "claude-sonnet-5-5"})
+    assert ai.model == "claude-sonnet-5-5"
+
+
+def test_unknown_model_is_422(client, ai):
+    ai.reply = ["x"]
+    assert client.post("/api/answers", json={"questions": ["Q?"], "model": "gpt-4"}).status_code == 422
+
+
+def test_settings_lists_models(client):
+    s = client.get("/api/settings").json()
+    assert s["default"] in [m["id"] for m in s["models"]]
+
+
 def test_wrong_count_is_502(client, ai):
     ai.reply = ["only one"]
     assert client.post("/api/answers", json={"questions": ["a", "b"]}).status_code == 502
