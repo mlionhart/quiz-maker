@@ -4,7 +4,7 @@ A personal quiz app. Questions are saved in Postgres so other apps can reuse the
 
 - **Question types:** multiple choice (wrong answers and an explanation are stored) or written. Written questions have a grading mode: exact (text match, no AI), standard (AI, lenient on wording, strict on facts) or gist (AI, the main idea is enough).
 - **Grading basis for written questions:** the answer key if there is one, else the quiz's source text, else general knowledge.
-- **AI:** Claude (default `claude-haiku-5-5`, set with `QUIZ_MODEL`) is called server-side only, for generating questions, wrong answers, explanations and grading. The Settings page lets you pick the model used to draft blank written answers (saved in the browser; the server only accepts models in its `MODELS` list).
+- **AI:** Claude (default `claude-haiku-5-5`, set with `QUIZ_MODEL`) is called server-side only, for generating questions, wrong answers, explanations and grading. The Settings page lets you pick the model for generating questions, drafting blank answers and grading (saved in the browser; the server only accepts models in its `MODELS` list). Everything else uses `QUIZ_MODEL`.
 
 ## Layout
 

@@ -22,6 +22,13 @@ MODEL = os.getenv("QUIZ_MODEL", "claude-haiku-5-5")
 # Models the Settings page may choose from. MODEL is the default for every call that does not pick one.
 MODELS = {"claude-haiku-5-5": "Haiku 5.5: fast and cheapest", "claude-sonnet-5-5": "Sonnet 5.5: more accurate, costs more"}
 MODELS.setdefault(MODEL, MODEL)
+
+
+def pick_model(name):
+    """The model a request asked for, or None for the server default. Only models in MODELS are allowed."""
+    if name and name not in MODELS:
+        raise HTTPException(422, "Unknown model")
+    return name or None
 MAX_UPLOAD = 10 * 1024 * 1024   # bytes, for an uploaded file
 MAX_TEXT = 150_000              # characters of source text sent to the model in one generate call
 
@@ -71,6 +78,7 @@ class QuizIn(BaseModel):
 class GenerateIn(BaseModel):
     text: str = Field(max_length=MAX_TEXT)
     n: int = Field(10, ge=1, le=50)
+    model: str = ""   # empty means the server default
     kind: Literal["choice", "written", "auto", "mix"] = "choice"   # auto: the model picks per question; mix: choice_pct
     choice_pct: int = Field(50, ge=0, le=100)
 
@@ -86,6 +94,7 @@ class AnswersIn(BaseModel):
 
 
 class GradeIn(BaseModel):
+    model: str = ""   # empty means the server default
     q: str
     a: str = ""
     response: str
@@ -269,7 +278,7 @@ def generate(body: GenerateIn):
             'Respond with ONLY a JSON array like [{"q":"...","kind":"choice","a":"...","d":["...","...","..."],"e":"..."},'
             '{"q":"...","kind":"written","a":"..."}]; written questions have no "d" or "e".'
         )
-    items, usage = ask_json(f"{prompt}\n\n<material>\n{body.text}\n</material>", max_tokens=16000)
+    items, usage = ask_json(f"{prompt}\n\n<material>\n{body.text}\n</material>", max_tokens=16000, model=pick_model(body.model))
     if not isinstance(items, list):
         raise HTTPException(502, "Model returned an unexpected format")
     items = [it for it in items if isinstance(it, dict)]
@@ -302,8 +311,7 @@ def distractors(body: DistractorsIn):
 @app.post("/api/answers")
 def answers(body: AnswersIn):
     """Drafts answer keys for written questions the author left blank. The author can edit them before saving."""
-    if body.model and body.model not in MODELS:
-        raise HTTPException(422, "Unknown model")
+    model = pick_model(body.model)
     questions = "\n".join(f"{i + 1}. {q}" for i, q in enumerate(body.questions))
     source = body.source.strip()
     prompt = (
@@ -315,7 +323,7 @@ def answers(body: AnswersIn):
         + (f"<source_material>\n{source}\n</source_material>\n\n" if source else "")
         + f"<questions>\n{questions}\n</questions>"
     )
-    result, _ = ask_json(prompt, model=body.model or None)
+    result, _ = ask_json(prompt, model=model)
     if not isinstance(result, list) or len(result) != len(body.questions):
         raise HTTPException(502, "Model returned the wrong number of answers")
     return {"answers": [str(x).strip() for x in result]}
@@ -396,7 +404,7 @@ def grade(body: GradeIn):
         'Respond with ONLY JSON: {"correct": true or false, "feedback": "the feedback", '
         '"answer": "the correct answer in a few words"}'
     )
-    result, _ = ask_json(prompt, max_tokens=1500)
+    result, _ = ask_json(prompt, max_tokens=1500, model=pick_model(body.model))
     if not isinstance(result, dict):
         raise HTTPException(502, "Could not parse the model's grading")
     return {

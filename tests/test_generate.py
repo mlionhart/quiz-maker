@@ -37,6 +37,12 @@ def test_mix_counts(client, ai):
     assert "exactly 10 multiple-choice and 0 written" in ai.prompt
 
 
+def test_model_choice(client, ai):
+    gen(client, ai, "choice", [], model="claude-sonnet-5-5")
+    assert ai.model == "claude-sonnet-5-5"
+    assert gen(client, ai, "choice", [], model="nope").status_code == 422
+
+
 def test_non_list_reply_is_502(client, ai):
     ai.reply = {"oops": 1}
     assert client.post("/api/generate", json={"text": "t", "kind": "auto"}).status_code == 502

@@ -26,6 +26,15 @@ def test_gist_uses_generous_instruction(client, ai):
     assert "main idea" in ai.prompt
 
 
+def test_model_choice(client, ai):
+    ai.reply = {"correct": True, "feedback": "Yes.", "answer": "a"}
+    grade(client, grading="standard")
+    assert ai.model is None
+    grade(client, grading="standard", model="claude-sonnet-5-5")
+    assert ai.model == "claude-sonnet-5-5"
+    assert grade(client, grading="standard", model="nope").status_code == 422
+
+
 def test_unparseable_reply_is_502(client, ai):
     ai.reply = None
     assert grade(client, grading="standard").status_code == 502

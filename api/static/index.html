@@ -77,9 +77,13 @@
   <section id="view-settings" class="hidden">
     <div class="card">
       <h2>Settings</h2>
-      <label for="set-model">AI model for drafting blank answers</label>
-      <select id="set-model"></select>
-      <p class="muted">Used when the AI fills in a Written answer you left blank. A more accurate model costs more per use. Saved in this browser.</p>
+      <p class="muted">Pick the AI model for each job. Sonnet is more accurate but costs more per use; Haiku is fast and cheap. Wrong answers and explanations always use Haiku. Saved in this browser.</p>
+      <label for="model-generate">Generating questions from text or files</label>
+      <select id="model-generate" data-task="generate"></select>
+      <label for="model-answers">Drafting blank written answers</label>
+      <select id="model-answers" data-task="answers"></select>
+      <label for="model-grade">Grading written answers (runs on every written question you play)</label>
+      <select id="model-grade" data-task="grade"></select>
     </div>
     <div class="card">
       <h2>Help</h2>
@@ -186,19 +190,21 @@ function show(v) {
 
 // ---------- settings ----------
 // Settings live in this browser (localStorage); the server checks any model it is sent against its own list.
-const getAnswerModel = () => { try { return localStorage.getItem('answerModel') || ''; } catch { return ''; } };
+// getModel(task) is '' until the user picks one, which makes the server use its default model.
+const getModel = task => { try { return localStorage.getItem('model-' + task) || ''; } catch { return ''; } };
+const modelSelects = [...document.querySelectorAll('select[data-task]')];
 async function openSettings() {
   show('settings');
   try {
     const s = await api('/settings');
-    const def = s.models.find(m => m.id === s.default);
-    $('set-model').innerHTML = `<option value="">Default (${esc(def ? def.label : s.default)})</option>`
-      + s.models.map(m => `<option value="${esc(m.id)}">${esc(m.label)}</option>`).join('');
-    $('set-model').value = getAnswerModel();
-  } catch (e) { $('set-model').innerHTML = '<option value="">Default</option>'; }
+    modelSelects.forEach(sel => {
+      sel.innerHTML = s.models.map(m => `<option value="${esc(m.id)}">${esc(m.label)}${m.id === s.default ? ' (standard)' : ''}</option>`).join('');
+      sel.value = getModel(sel.dataset.task) || s.default;
+    });
+  } catch (e) { modelSelects.forEach(sel => { sel.innerHTML = '<option value="">Standard model</option>'; }); }
 }
 $('tab-settings').onclick = openSettings;
-$('set-model').onchange = () => { try { localStorage.setItem('answerModel', $('set-model').value); } catch {} };
+modelSelects.forEach(sel => { sel.onchange = () => { try { localStorage.setItem('model-' + sel.dataset.task, sel.value); } catch {} }; });
 
 // ---------- list ----------
 async function renderList() {
@@ -392,7 +398,7 @@ async function fillMissing() {
     });
   }
   if (writtenRows.length) {
-    const { answers } = await api('/answers', 'POST', { questions: writtenRows.map(r => r.querySelector('.q').value.trim()), source: $('source').value.trim(), model: getAnswerModel() });
+    const { answers } = await api('/answers', 'POST', { questions: writtenRows.map(r => r.querySelector('.q').value.trim()), source: $('source').value.trim(), model: getModel('answers') });
     writtenRows.forEach((r, i) => { r.querySelector('.a').value = answers[i]; growRow(r); });
   }
   return { choice: choiceRows.length, written: writtenRows.length };
@@ -450,7 +456,7 @@ $('gen').onclick = async () => {
   if (text.length > MAX_TEXT) return alert(`The text has ${text.length.toLocaleString()} characters; the limit is ${MAX_TEXT.toLocaleString()}. Use a smaller part of it.`);
   $('gen').disabled = true; $('gen-status').textContent = 'Generating...';
   try {
-    const { items, usage } = await api('/generate', 'POST', { text, n, kind, choice_pct: +$('mix').value });
+    const { items, usage } = await api('/generate', 'POST', { text, n, kind, choice_pct: +$('mix').value, model: getModel('generate') });
     items.forEach(i => addRow(i.q, i.a, i.d || [], i.kind, i.e || ''));
     if ($('keep-src').checked && !$('source').value.trim()) $('source').value = text;
     const c = items.filter(i => i.kind === 'choice').length;
@@ -539,7 +545,7 @@ async function play(id) {
       if (!response) return showResult(false, 'No answer given.');
       $('ans').textContent = 'Grading...';
       try {
-        const r = await api('/grade', 'POST', { q: it.q, a: it.a, response, quiz_id: quiz.id, grading: it.grading || 'standard' });
+        const r = await api('/grade', 'POST', { q: it.q, a: it.a, response, quiz_id: quiz.id, grading: it.grading || 'standard', model: getModel('grade') });
         showResult(r.correct, r.feedback, r);
       } catch (e) { showResult(null, 'AI grading unavailable: ' + e.message); }
     };
