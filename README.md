@@ -37,6 +37,23 @@ docker compose up -d --build
 
 Run `./backup.sh` first if the change touches the database schema.
 
+## Tests
+
+Backend checks run without a database or an API key (the model call is faked):
+
+```bash
+python -m venv .venv && .venv/Scripts/pip install -r api/requirements.txt -r requirements-dev.txt   # Linux/macOS: .venv/bin/pip
+.venv/Scripts/python -m pytest tests
+```
+
+Run them before committing. Add a test when you fix a bug or add an endpoint.
+
+## How the code is organized
+
+- All backend code is in `api/main.py`; the whole front end is `api/static/index.html` (vanilla JS, no build step). The image bakes in both files, so front-end edits need a rebuild.
+- New database columns need two changes: the `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` in `lifespan` (existing databases) and `schema.sql` (fresh ones).
+- Every AI call goes through `ask_json()`. Text from users or uploads is wrapped in tags and marked as untrusted in the prompt.
+
 ## Notes
 
 - Keep the folder named `quiz-maker` on the server: Docker ties the database volume to the folder name.
