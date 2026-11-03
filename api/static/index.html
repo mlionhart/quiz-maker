@@ -129,11 +129,11 @@
       </details>
       <details>
         <summary>Wrong answers and explanations</summary>
-        <p class="muted">For multiple choice, type the wrong answers separated by | or leave them blank and use the AI fill button, which also writes a short explanation. Saving also fills in anything missing. The AI only fills blank fields and never changes what you typed, except that it adds wrong answers until there are 3. Clicking the type button flips between Written and Multiple choice; use its arrow for the other types.</p>
+        <p class="muted">For multiple choice, type the wrong answers separated by | or leave them blank and use the AI fill button, which also writes a short explanation. When you save and something is missing, you are asked whether the AI should fill it in (it uses tokens), so nothing is spent without your say-so. The AI only fills blank fields and never changes what you typed, except that it adds wrong answers until there are 3. Clicking the type button flips between Written and Multiple choice; use its arrow for the other types.</p>
       </details>
       <details>
         <summary>Blank answers</summary>
-        <p class="muted">If an answer is blank (Written or multiple choice), the AI drafts one (from the source material or general knowledge) and stops so you can check it before saving. Exact questions always need your own answer.</p>
+        <p class="muted">If an answer is blank (Written or multiple choice), and you choose to let the AI fill it in, it drafts one (from the source material or general knowledge) and stops so you can check it before saving. Exact questions always need your own answer.</p>
       </details>
     </div>
   </section>
@@ -218,6 +218,7 @@
     <p id="dlg-msg"></p>
     <div class="btns">
       <button value="no" id="dlg-no">Cancel</button>
+      <button value="alt" id="dlg-alt" class="hidden"></button>
       <button value="yes" id="dlg-yes" class="primary">OK</button>
     </div>
   </form>
@@ -254,18 +255,22 @@ async function api(path, method = 'GET', body) {
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.status);
   return res.json();
 }
-// In-page replacements for alert() and confirm(). Both return a promise: ask() resolves true when the user confirms.
-function ask(msg, yes = 'OK', no = 'Cancel') {
+// In-page replacements for alert() and confirm(). choose() resolves to 'yes', 'alt' (the optional middle button) or ''
+// (cancelled or Escape); ask() resolves true when the user confirms.
+function choose(msg, yes = 'OK', no = 'Cancel', alt = '') {
   $('dlg-msg').textContent = msg;
   $('dlg-yes').textContent = yes;
   $('dlg-no').textContent = no;
+  $('dlg-alt').textContent = alt;
   $('dlg-no').classList.toggle('hidden', !no);
+  $('dlg-alt').classList.toggle('hidden', !alt);
   return new Promise(res => {
-    $('dlg').onclose = () => res($('dlg').returnValue === 'yes');
+    $('dlg').onclose = () => res($('dlg').returnValue === 'yes' || $('dlg').returnValue === 'alt' ? $('dlg').returnValue : '');
     $('dlg').showModal();
     $('dlg-yes').focus();
   });
 }
+const ask = async (msg, yes, no) => (await choose(msg, yes, no)) === 'yes';
 const notify = msg => ask(msg, 'OK', '');
 const fail = e => notify('Error: ' + e.message);
 
@@ -561,16 +566,16 @@ $('add-q').onclick = () => {
 // Fills what the AI can, and only where a field is blank: answers (where the type allows it, see KINDS), then wrong
 // answers and explanations. The user's own wrong answers are kept; the AI only tops them up to 3.
 // Returns how many answers it drafted and how many rows it completed.
+const draftableRows = () => [...$('qs').children].filter(r => {
+  const x = readRow(r);
+  return x.q && !x.a && kindOf(x.kind).draftable(x);
+});
+const extrasRows = () => [...$('qs').children].filter(r => {
+  const x = readRow(r);
+  return x.q && x.a && kindOf(x.kind).needsExtras(x);
+});
 async function fillMissing() {
-  const rows = [...$('qs').children];
-  const draftRows = rows.filter(r => {
-    const x = readRow(r);
-    return x.q && !x.a && kindOf(x.kind).draftable(x);
-  });
-  const choiceRows = () => rows.filter(r => {
-    const x = readRow(r);
-    return x.q && x.a && kindOf(x.kind).needsExtras(x);
-  });
+  const draftRows = draftableRows(), choiceRows = extrasRows;
   if (draftRows.length || choiceRows().length) $('fill-status').textContent = 'Generating...';
   if (draftRows.length) {
     const { answers } = await api('/answers', 'POST', { questions: draftRows.map(r => r.querySelector('.q').value.trim()), source: $('source').value.trim(), model: getModel('answers') });
@@ -612,7 +617,16 @@ const save = async close => {
   if (stuck) return notify(kindOf(stuck.kind).missing);
   $('save').disabled = $('save-close').disabled = true;
   try {
-    try {
+    // The AI costs tokens, so it never runs on Save without asking first.
+    const drafts = draftableRows().length, extras = extrasRows().length;
+    let fill = false;
+    if (drafts || extras) {
+      const what = [drafts && `${drafts} blank answer${drafts > 1 ? 's' : ''}`, extras && `wrong answers or explanations for ${extras} question${extras > 1 ? 's' : ''}`].filter(Boolean).join(' and ');
+      const pick = await choose(`Missing: ${what}. Let the AI fill ${drafts + extras > 1 ? 'them' : 'it'} in? This uses tokens.`, 'Fill with AI and save', 'Cancel', 'Save without filling');
+      if (!pick) return;
+      fill = pick === 'yes';
+    }
+    if (fill) try {
       const n = await fillMissing();
       // An AI-drafted answer becomes the grading key, so let the user look at it before it is saved.
       if (n.drafted) { $('fill-status').textContent = ''; return await notify(`The AI drafted answers for ${n.drafted} question${n.drafted > 1 ? 's' : ''}. Check or edit them, then press Save again.`); }
