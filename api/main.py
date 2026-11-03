@@ -258,7 +258,10 @@ CHOICE_RULES = (
 def generate(body: GenerateIn):
     count = (
         f"{body.n}" if body.n
-        else f"as many as it takes to cover each key concept in the material once, and at most {MAX_QUESTIONS}"
+        else (
+            f"about one question per main idea in the material (at most {MAX_QUESTIONS}). Group closely related details into one question "
+            "instead of asking about each detail, and write only a few questions for short material"
+        )
     )
     prompt = (
         f"Write {count} quiz questions with short, concise answers based only on the material between the <material> tags. "
