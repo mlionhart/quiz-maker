@@ -113,13 +113,16 @@
   <section id="view-settings" class="hidden">
     <div class="card">
       <h2>Settings</h2>
-      <p class="muted">Pick the AI model for each job. Sonnet is more accurate but costs more per use; Haiku is fast and cheap. Wrong answers and explanations always use Haiku. Saved in this browser.</p>
+      <p class="muted">Pick the AI model for each job. Sonnet is more accurate but costs more per use; Haiku is fast and cheap. Saved in this browser.</p>
       <label for="model-generate">Generating quizzes from text or files</label>
       <select id="model-generate" data-task="generate"></select>
       <label for="model-answers">Drafting blank answers</label>
       <select id="model-answers" data-task="answers"></select>
       <label for="model-grade">Grading written answers (runs on every written question you play)</label>
       <select id="model-grade" data-task="grade"></select>
+      <label for="model-explain">Wrong answers and explanations</label>
+      <select id="model-explain" data-task="explain"></select>
+      <label class="chk" style="margin-top:16px"><input type="checkbox" id="dev" style="width:auto"> Show usage details (model and tokens after each AI action)</label>
     </div>
     <div class="card">
       <h2>Help</h2>
@@ -298,6 +301,12 @@ async function openSettings() {
 }
 $('tab-settings').onclick = openSettings;
 modelSelects.forEach(sel => { sel.onchange = () => { try { localStorage.setItem('model-' + sel.dataset.task, sel.value); } catch {} }; });
+// Usage details (which model ran, how many tokens) are for the developer; regular users never see them unless they turn this on.
+const devOn = () => { try { return localStorage.getItem('dev') === '1'; } catch { return false; } };
+$('dev').checked = devOn();
+$('dev').onchange = () => { try { localStorage.setItem('dev', $('dev').checked ? '1' : '0'); } catch {} };
+const usageNote = u => devOn() && u ? `${u.model} · ${u.input} in / ${u.output} out tokens` : '';
+const sumUsage = list => list.length ? { model: [...new Set(list.map(u => u.model))].join(' + '), input: list.reduce((s, u) => s + u.input, 0), output: list.reduce((s, u) => s + u.output, 0) } : null;
 
 // ---------- list ----------
 const DIFFICULTIES = { beginner: 'Beginner', intermediate: 'Intermediate', advanced: 'Advanced' };
@@ -575,16 +584,18 @@ const extrasRows = () => [...$('qs').children].filter(r => {
   return x.q && x.a && kindOf(x.kind).needsExtras(x);
 });
 async function fillMissing() {
-  const draftRows = draftableRows(), choiceRows = extrasRows;
+  const draftRows = draftableRows(), choiceRows = extrasRows, used = [];
   if (draftRows.length || choiceRows().length) $('fill-status').textContent = 'Generating...';
   if (draftRows.length) {
-    const { answers } = await api('/answers', 'POST', { questions: draftRows.map(r => r.querySelector('.q').value.trim()), source: $('source').value.trim(), model: getModel('answers') });
+    const { answers, usage } = await api('/answers', 'POST', { questions: draftRows.map(r => r.querySelector('.q').value.trim()), source: $('source').value.trim(), model: getModel('answers') });
+    if (usage) used.push(usage);
     draftRows.forEach((r, i) => { r.querySelector('.a').value = answers[i]; growRow(r); });
   }
   const todo = choiceRows();
   if (todo.length) {
     const items = todo.map(r => { const x = readRow(r); return { q: x.q, a: x.a, kind: x.kind }; });
-    const { items: filled } = await api('/distractors', 'POST', { items });
+    const { items: filled, usage } = await api('/distractors', 'POST', { items, model: getModel('explain') });
+    if (usage) used.push(usage);
     todo.forEach((r, i) => {
       const x = readRow(r);
       if (KINDS[x.kind].fields.includes('d') && x.d.length < 3) {
@@ -595,13 +606,13 @@ async function fillMissing() {
       growRow(r);
     });
   }
-  return { drafted: draftRows.length, choice: todo.length };
+  return { drafted: draftRows.length, choice: todo.length, usage: sumUsage(used) };
 }
 $('fill-d').onclick = async () => {
   $('fill-d').disabled = true; $('fill-status').textContent = '';
   try {
     const n = await fillMissing();
-    $('fill-status').textContent = n.drafted || n.choice ? `Filled ${n.drafted + n.choice}.${n.drafted ? ' Check the answers the AI drafted.' : ''}` : 'Nothing to fill.';
+    $('fill-status').textContent = n.drafted || n.choice ? `Filled ${n.drafted + n.choice}.${n.drafted ? ' Check the answers the AI drafted.' : ''} ${usageNote(n.usage)}` : 'Nothing to fill.';
   } catch (e) { $('fill-status').textContent = 'Error: ' + e.message; }
   $('fill-d').disabled = false;
 };
@@ -678,7 +689,7 @@ $('gen').onclick = async () => {
     saveDraft();
     if ($('keep-src').checked && !$('source').value.trim()) $('source').value = text;
     const c = items.filter(i => i.kind === 'choice').length;
-    $('gen-status').textContent = `Added ${items.length} questions (${c} multiple choice, ${items.length - c} written; ${usage.input} in / ${usage.output} out tokens).`;
+    $('gen-status').textContent = `Added ${items.length} questions (${c} multiple choice, ${items.length - c} written). ${usageNote(usage)}`;
   } catch (e) { $('gen-status').textContent = 'Error: ' + e.message; }
   $('gen').disabled = false;
 };
@@ -722,11 +733,11 @@ async function play(id) {
       const fb = $('fb');
       fb.className = 'fb ' + (right ? 'ok' : 'bad');
       const head = right ? '✅ Correct!' : `❌ Not quite. The answer is: ${esc(it.a)}`;
-      const show = text => { fb.innerHTML = `<strong>${head}</strong>` + (text ? `<div style="margin-top:6px">${esc(text)}</div>` : ''); };
+      const show = (text, note = '') => { fb.innerHTML = `<strong>${head}</strong>` + (text ? `<div style="margin-top:6px">${esc(text)}</div>` : '') + (note ? `<div class="muted">${esc(note)}</div>` : ''); };
       if (it.e) show(it.e);
       else {
         fb.innerHTML = `<strong>${head}</strong><div class="muted">Getting explanation...</div>`;
-        api('/explain', 'POST', { q: it.q, a: it.a, picked }).then(r => show(r.explanation)).catch(() => show(''));
+        api('/explain', 'POST', { q: it.q, a: it.a, picked, model: getModel('explain') }).then(r => show(r.explanation, usageNote(r.usage))).catch(() => show(''));
       }
       $('next').classList.remove('hidden'); $('next').focus();
       $('next').onclick = () => finish(right);
@@ -765,11 +776,11 @@ async function play(id) {
       const fb = $('fb');
       fb.className = 'fb ' + (right ? 'ok' : 'bad');
       const head = right ? '✅ Correct!' : `❌ Not quite. The correct answers: ${esc(correct.join(', '))}`;
-      const show = text => { fb.innerHTML = `<strong>${head}</strong>` + (text ? `<div style="margin-top:6px">${esc(text)}</div>` : ''); };
+      const show = (text, note = '') => { fb.innerHTML = `<strong>${head}</strong>` + (text ? `<div style="margin-top:6px">${esc(text)}</div>` : '') + (note ? `<div class="muted">${esc(note)}</div>` : ''); };
       if (it.e) show(it.e);
       else {
         fb.innerHTML = `<strong>${head}</strong><div class="muted">Getting explanation...</div>`;
-        api('/explain', 'POST', { q: it.q, a: correct.join(', '), picked: chosen.join(', ') }).then(r => show(r.explanation)).catch(() => show(''));
+        api('/explain', 'POST', { q: it.q, a: correct.join(', '), picked: chosen.join(', '), model: getModel('explain') }).then(r => show(r.explanation, usageNote(r.usage))).catch(() => show(''));
       }
       $('check').classList.add('hidden'); $('next').classList.remove('hidden'); $('next').focus();
       $('next').onclick = () => finish(right);
@@ -791,6 +802,7 @@ async function play(id) {
       $('ans').innerHTML = (ok === null ? '' : `<p>${ok ? '✅ Correct' : '❌ Incorrect'}</p>`)
         + (feedback ? `<p class="muted">${esc(feedback)}</p>` : '')
         + basisNote
+        + (usageNote(info.usage) ? `<p class="muted">${esc(usageNote(info.usage))}</p>` : '')
         + (shown ? `<p>${it.a ? 'Answer' : "AI's answer"}: <strong>${esc(shown)}</strong></p>` : '')
         + (ok === null
           ? `<p>Did you get it right?</p><button class="ok" id="y">Yes</button> <button class="bad" id="n">No</button>`

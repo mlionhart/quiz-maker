@@ -56,3 +56,14 @@ def test_select_multiple_fill_shows_separate_options_and_keeps_three(client, ai)
     assert len(r.json()["items"][0]["d"]) == 3
     assert "1; 2; 3; 4; 5" in ai.prompt and '["1"' not in ai.prompt
     assert "never a list" in ai.prompt
+
+
+def test_wrong_answers_and_explanations_take_a_model_and_report_usage(client, ai):
+    ai.reply = [{"d": ["x", "y", "z"], "e": "Because."}]
+    r = client.post("/api/distractors", json={"items": [{"q": "q", "a": "a", "kind": "choice"}], "model": "claude-sonnet-5-5"})
+    assert ai.model == "claude-sonnet-5-5"
+    assert r.json()["usage"] == {"model": "claude-sonnet-5-5", "input": 1, "output": 2}
+    ai.reply = {"explanation": "Because."}
+    r = client.post("/api/explain", json={"q": "q", "a": "a"})
+    assert ai.model is None and r.json()["usage"]["model"] == main.MODEL
+    assert client.post("/api/explain", json={"q": "q", "a": "a", "model": "nope"}).status_code == 422

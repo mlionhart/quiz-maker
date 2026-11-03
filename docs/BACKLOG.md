@@ -27,6 +27,7 @@ Types of work: **feature**, **ux**, **schema** (database change), **prompt** (AI
 - Question types as one table (`KINDS`), True/False type
 - Category and difficulty per quiz (editor fields, shown on the list), select-multiple type (all-or-nothing)
 - Backend tests (`tests/`), architecture note in the README
+- Fourth model setting (wrong answers and explanations), and a "Show usage details" switch in Settings that shows the model and token counts after each AI action (hidden by default)
 - Save asks before the AI fills anything in (Fill with AI and save / Save without filling / Cancel), so tokens are never spent unasked
 - Test-note fixes after deploy: select-multiple wrong-answer fill (one item each, still 3), "(Select all that apply)" added when playing, missed correct options shown with a green outline, Home button and colored score on the results screen, label click flips only Written / Multiple choice, type button keeps its place, Add question will not stack blank questions, generate text no longer follows you between quizzes, source-material file upload, editor backed up in the browser (restore offer after a reload), Save keeps you in the editor (plus Save and close), clearer error when the login has lapsed, larger touch targets on phones
 
@@ -55,7 +56,7 @@ Types of work: **feature**, **ux**, **schema** (database change), **prompt** (AI
 
 ### 6. Sharing and usage (feature)
 - Export or print quizzes (PDF, plain text) so you can see or keep what was generated.
-- Show token use or an estimated cost per action, since the Anthropic usage page lags by about half an hour.
+- Estimated cost (not just tokens) next to the usage details.
 
 ### 7. Polish (ux)
 - Our own dropdown for the Settings model selects and the difficulty select, matching the type buttons (same look and behavior on every browser).

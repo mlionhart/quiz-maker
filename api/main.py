@@ -112,6 +112,7 @@ class GenerateIn(BaseModel):
 
 class DistractorsIn(BaseModel):
     items: list[Item]
+    model: str = ""   # empty means the server default
 
 
 class AnswersIn(BaseModel):
@@ -141,6 +142,11 @@ def save_items(cur, quiz_id, items):
             for i, it in enumerate(items)
         ],
     )
+
+
+def usage_info(usage, model):
+    """Which model ran and how many tokens it used; the page shows this only when its usage-details setting is on."""
+    return {"model": model or MODEL, "input": usage.input_tokens, "output": usage.output_tokens}
 
 
 def ask_json(prompt, max_tokens=8000, model=None):
@@ -317,7 +323,8 @@ def generate(body: GenerateIn):
             'Respond with ONLY a JSON array like [{"q":"...","kind":"choice","a":"...","d":["...","...","..."],"e":"..."},'
             '{"q":"...","kind":"written","a":"..."}]; written questions have no "d" or "e".'
         )
-    items, usage = ask_json(f"{prompt}\n\n<material>\n{body.text}\n</material>", max_tokens=16000, model=pick_model(body.model))
+    model = pick_model(body.model)
+    items, usage = ask_json(f"{prompt}\n\n<material>\n{body.text}\n</material>", max_tokens=16000, model=model)
     if not isinstance(items, list):
         raise HTTPException(502, "Model returned an unexpected format")
     items = [it for it in items if isinstance(it, dict)]
@@ -326,7 +333,7 @@ def generate(body: GenerateIn):
             it["kind"] = body.kind
         elif it.get("kind") != "choice":
             it["kind"] = "written"
-    return {"items": items, "usage": {"input": usage.input_tokens, "output": usage.output_tokens}}
+    return {"items": items, "usage": usage_info(usage, model)}
 
 
 @app.post("/api/distractors")
@@ -347,10 +354,11 @@ def distractors(body: DistractorsIn):
         'Respond with ONLY a JSON array with one object per question, same order, like [{"d":["...","...","..."],"e":"..."}].\n\n'
         + questions
     )
-    result, _ = ask_json(prompt)
+    model = pick_model(body.model)
+    result, usage = ask_json(prompt, model=model)
     if not isinstance(result, list) or len(result) != len(body.items) or not all(isinstance(r, dict) for r in result):
         raise HTTPException(502, "Model returned the wrong number of answer sets")
-    return {"items": [{"d": [str(x) for x in r.get("d", [])][:3], "e": str(r.get("e", ""))} for r in result]}
+    return {"items": [{"d": [str(x) for x in r.get("d", [])][:3], "e": str(r.get("e", ""))} for r in result], "usage": usage_info(usage, model)}
 
 
 @app.post("/api/answers")
@@ -368,20 +376,22 @@ def answers(body: AnswersIn):
         + (f"<source_material>\n{source}\n</source_material>\n\n" if source else "")
         + f"<questions>\n{questions}\n</questions>"
     )
-    result, _ = ask_json(prompt, model=model)
+    result, usage = ask_json(prompt, model=model)
     if not isinstance(result, list) or len(result) != len(body.questions):
         raise HTTPException(502, "Model returned the wrong number of answers")
-    return {"answers": [str(x).strip() for x in result]}
+    return {"answers": [str(x).strip() for x in result], "usage": usage_info(usage, model)}
 
 
 class ExplainIn(BaseModel):
     q: str
     a: str
     picked: str = ""
+    model: str = ""   # empty means the server default
 
 
 @app.post("/api/explain")
 def explain(body: ExplainIn):
+    model = pick_model(body.model)
     wrong_pick = body.picked and body.picked != body.a
     prompt = (
         "Explain in one or two short sentences why the correct answer to this quiz question is right. "
@@ -390,8 +400,8 @@ def explain(body: ExplainIn):
         + (f"<student_choice>{body.picked}</student_choice>\n" if wrong_pick else "")
         + '\nRespond with ONLY JSON: {"explanation": "..."}'
     )
-    result, _ = ask_json(prompt, max_tokens=1000)
-    return {"explanation": str(result.get("explanation", "")) if isinstance(result, dict) else ""}
+    result, usage = ask_json(prompt, max_tokens=1000, model=model)
+    return {"explanation": str(result.get("explanation", "")) if isinstance(result, dict) else "", "usage": usage_info(usage, model)}
 
 
 def normalize(s):
@@ -449,7 +459,8 @@ def grade(body: GradeIn):
         'Respond with ONLY JSON: {"correct": true or false, "feedback": "the feedback", '
         '"answer": "the correct answer in a few words"}'
     )
-    result, _ = ask_json(prompt, max_tokens=1500, model=pick_model(body.model))
+    model = pick_model(body.model)
+    result, usage = ask_json(prompt, max_tokens=1500, model=model)
     if not isinstance(result, dict):
         raise HTTPException(502, "Could not parse the model's grading")
     return {
@@ -457,6 +468,7 @@ def grade(body: GradeIn):
         "feedback": str(result.get("feedback", "")),
         "answer": str(result.get("answer", "")),
         "basis": basis,
+        "usage": usage_info(usage, model),
     }
 
 

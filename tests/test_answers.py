@@ -1,7 +1,7 @@
 def test_returns_one_answer_per_question(client, ai):
     ai.reply = [" GET ", "Body"]
     r = client.post("/api/answers", json={"questions": ["Most common HTTP method?", "Which part carries data?"]})
-    assert r.json() == {"answers": ["GET", "Body"]}
+    assert r.json()["answers"] == ["GET", "Body"]
     assert "general knowledge" in ai.prompt and "<source_material>" not in ai.prompt
 
 
