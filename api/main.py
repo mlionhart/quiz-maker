@@ -53,20 +53,28 @@ async def lifespan(app):
 app = FastAPI(title="Quiz Maker", lifespan=lifespan)
 
 
+# Question types. A new type needs: its name in Kind, a rule in Item below, and its entry in the page's KINDS table.
+Kind = Literal["choice", "written", "truefalse"]
+HAS_WRONG_ANSWERS = {"choice"}              # kinds that store wrong answers (distractors)
+HAS_EXPLANATION = {"choice", "truefalse"}   # kinds that store an explanation
+
+
 class Item(BaseModel):
     q: str
     a: str
     d: list[str] = []
     e: str = ""
-    kind: Literal["choice", "written"] = "written"
+    kind: Kind = "written"
     grading: Literal["exact", "standard", "gist"] = "standard"
 
     @model_validator(mode="after")
-    def choice_needs_answer(self):
+    def check_answer(self):
         if self.kind == "choice" and not self.a.strip():
             raise ValueError("Multiple-choice questions need an answer")
         if self.kind == "written" and self.grading == "exact" and not self.a.strip():
             raise ValueError("Exact grading needs an answer to compare against")
+        if self.kind == "truefalse" and self.a not in ("True", "False"):
+            raise ValueError('True/False questions need the answer "True" or "False"')
         return self
 
 
@@ -109,8 +117,8 @@ def save_items(cur, quiz_id, items):
         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
         [
             (
-                quiz_id, i, it.q, it.a, Jsonb(it.d if it.kind == "choice" else []), it.kind,
-                it.e if it.kind == "choice" else "", it.grading if it.kind == "written" else "standard",
+                quiz_id, i, it.q, it.a, Jsonb(it.d if it.kind in HAS_WRONG_ANSWERS else []), it.kind,
+                it.e if it.kind in HAS_EXPLANATION else "", it.grading if it.kind == "written" else "standard",
             )
             for i, it in enumerate(items)
         ],

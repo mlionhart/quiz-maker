@@ -1,0 +1,39 @@
+import pytest
+from pydantic import ValidationError
+
+import main
+
+
+def test_true_false_answer_must_be_true_or_false():
+    assert main.Item(q="Water is wet", a="True", kind="truefalse").a == "True"
+    with pytest.raises(ValidationError):
+        main.Item(q="Water is wet", a="maybe", kind="truefalse")
+    with pytest.raises(ValidationError):
+        main.Item(q="Water is wet", a="", kind="truefalse")
+
+
+def test_choice_needs_an_answer():
+    with pytest.raises(ValidationError):
+        main.Item(q="q", a=" ", kind="choice")
+
+
+def test_exact_written_needs_an_answer():
+    with pytest.raises(ValidationError):
+        main.Item(q="q", a="", kind="written", grading="exact")
+    assert main.Item(q="q", a="", kind="written").a == ""   # AI-graded written questions may have no answer
+
+
+def test_unknown_kind_rejected():
+    with pytest.raises(ValidationError):
+        main.Item(q="q", a="a", kind="essay")
+
+
+def test_what_each_kind_stores():
+    assert main.HAS_WRONG_ANSWERS == {"choice"}
+    assert main.HAS_EXPLANATION == {"choice", "truefalse"}
+
+
+def test_distractors_endpoint_accepts_true_false(client, ai):
+    ai.reply = [{"d": [], "e": "Because."}]
+    r = client.post("/api/distractors", json={"items": [{"q": "Water is wet", "a": "True", "kind": "truefalse"}]})
+    assert r.status_code == 200 and r.json()["items"][0]["e"] == "Because."
