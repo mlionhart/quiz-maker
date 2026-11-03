@@ -47,6 +47,7 @@
   button.active { border-color:var(--acc); font-weight:600; }
   input, textarea, select { font:inherit; width:100%; padding:8px; border-radius:8px; border:1px solid var(--line); background:var(--field); color:var(--fg); }
   input:focus, textarea:focus, select:focus { outline:none; border-color:var(--acc); }
+  input:disabled, textarea:disabled { opacity:.5; cursor:not-allowed; }
   textarea { resize:vertical; }
   textarea.auto { resize:none; overflow:hidden; display:block; }
   textarea.auto.hidden { display:none; }
@@ -143,8 +144,7 @@
         <label for="n">How many questions</label>
         <label class="chk"><input type="checkbox" id="n-auto" checked style="width:auto"> Auto</label>
       </div>
-      <p id="n-note" class="muted" style="margin:0">The AI covers the main ideas, up to 30 questions.</p>
-      <input id="n" type="number" value="10" min="1" max="30" class="hidden">
+      <input id="n" type="number" placeholder="Auto" data-v="10" min="1" max="30" disabled title="Auto: the AI covers the main ideas, up to 30 questions">
       <label><input type="checkbox" id="keep-src" checked style="width:auto"> Also save the pasted text as this quiz's source material</label>
       <p><button id="gen" class="primary">Generate</button> <span id="gen-status" class="muted"></span></p>
       <p class="muted">Generated questions are added to the Questions list below so you can edit them before saving.</p>
@@ -302,9 +302,12 @@ function setToggle(btn, v) {
 }
 setToggle($('gen-kind'), 'auto');
 $('gen-kind').addEventListener('change', () => $('mix-row').classList.toggle('hidden', $('gen-kind').dataset.value !== 'mix'));
+// With Auto on, the box is greyed out and empty; it remembers the number for when Auto is turned off.
 $('n-auto').onchange = () => {
-  $('n').classList.toggle('hidden', $('n-auto').checked);
-  $('n-note').classList.toggle('hidden', !$('n-auto').checked);
+  const n = $('n');
+  if ($('n-auto').checked) { n.dataset.v = n.value || n.dataset.v; n.value = ''; }
+  else n.value = n.dataset.v;
+  n.disabled = $('n-auto').checked;
 };
 $('mix').oninput = () => { $('mix-c').textContent = $('mix').value; $('mix-w').textContent = 100 - $('mix').value; };
 
