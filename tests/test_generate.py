@@ -46,7 +46,7 @@ def test_model_choice(client, ai):
 def test_auto_count(client, ai):
     ai.reply = []
     client.post("/api/generate", json={"text": "t", "n": None, "kind": "choice"})
-    assert "about one question per main idea" in ai.prompt and "at most 30" in ai.prompt
+    assert "important concepts" in ai.prompt and "at most 30" in ai.prompt
     client.post("/api/generate", json={"text": "t", "n": None, "kind": "mix", "choice_pct": 60})
     assert "about 60% of them multiple choice" in ai.prompt
 

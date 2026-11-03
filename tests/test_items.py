@@ -50,12 +50,9 @@ def test_select_multiple_answers_are_a_json_list():
             main.Item(q="q", a=bad, kind="multiselect")
 
 
-def test_select_multiple_gets_at_least_as_many_wrong_answers_as_correct(client, ai):
-    ai.reply = [{"d": list("abcdefgh"), "e": "Because."}, {"d": list("abcdefgh"), "e": "Because."}]
-    many = '["1","2","3","4","5"]'
-    r = client.post("/api/distractors", json={"items": [
-        {"q": "q", "a": many, "kind": "multiselect"},
-        {"q": "q", "a": '["1","2"]', "kind": "multiselect"}]})
-    assert [len(i["d"]) for i in r.json()["items"]] == [5, 3]
-    assert "Wrong answers wanted: 5" in ai.prompt and "1; 2; 3; 4; 5" in ai.prompt
+def test_select_multiple_fill_shows_separate_options_and_keeps_three(client, ai):
+    ai.reply = [{"d": list("abcdefgh"), "e": "Because."}]
+    r = client.post("/api/distractors", json={"items": [{"q": "q", "a": '["1","2","3","4","5"]', "kind": "multiselect"}]})
+    assert len(r.json()["items"][0]["d"]) == 3
+    assert "1; 2; 3; 4; 5" in ai.prompt and '["1"' not in ai.prompt
     assert "never a list" in ai.prompt

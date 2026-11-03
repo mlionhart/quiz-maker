@@ -27,7 +27,7 @@ Types of work: **feature**, **ux**, **schema** (database change), **prompt** (AI
 - Question types as one table (`KINDS`), True/False type
 - Category and difficulty per quiz (editor fields, shown on the list), select-multiple type (all-or-nothing)
 - Backend tests (`tests/`), architecture note in the README
-- Test-note fixes after deploy: select-multiple wrong-answer fill (one item each, at least as many as correct answers), "(Select all that apply)" added when playing, missed correct options shown with a green outline, Home button and colored score on the results screen, label click flips only Written / Multiple choice, type button keeps its place, Add question will not stack blank questions, generate text no longer follows you between quizzes, source-material file upload, editor backed up in the browser (restore offer after a reload), Save keeps you in the editor (plus Save and close), clearer error when the login has lapsed, larger touch targets on phones
+- Test-note fixes after deploy: select-multiple wrong-answer fill (one item each, still 3), "(Select all that apply)" added when playing, missed correct options shown with a green outline, Home button and colored score on the results screen, label click flips only Written / Multiple choice, type button keeps its place, Add question will not stack blank questions, generate text no longer follows you between quizzes, source-material file upload, editor backed up in the browser (restore offer after a reload), Save keeps you in the editor (plus Save and close), clearer error when the login has lapsed, larger touch targets on phones
 
 ## Planned (in order)
 

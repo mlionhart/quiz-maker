@@ -129,7 +129,7 @@
       </details>
       <details>
         <summary>Wrong answers and explanations</summary>
-        <p class="muted">For multiple choice, type the wrong answers separated by | or leave them blank and use the AI fill button, which also writes a short explanation. Saving also fills in anything missing. The AI only fills blank fields and never changes what you typed, except that it adds wrong answers until there are 3 (for Select multiple, until there are at least as many wrong answers as correct ones). Clicking the type button flips between Written and Multiple choice; use its arrow for the other types.</p>
+        <p class="muted">For multiple choice, type the wrong answers separated by | or leave them blank and use the AI fill button, which also writes a short explanation. Saving also fills in anything missing. The AI only fills blank fields and never changes what you typed, except that it adds wrong answers until there are 3. Clicking the type button flips between Written and Multiple choice; use its arrow for the other types.</p>
       </details>
       <details>
         <summary>Blank answers</summary>
@@ -353,8 +353,7 @@ const KINDS = {
     label: 'Select multiple', note: 'Student picks every correct option',
     fields: ['a', 'd', 'e'], side: null,
     requiresAnswer: () => true, draftable: () => false,   // the AI drafts one answer, not a list
-    wrongCount: x => Math.max(3, correctList(x.a).length),   // at least as many wrong answers as correct ones
-    needsExtras: x => x.d.length < Math.max(3, correctList(x.a).length) || !x.e,
+    needsExtras: x => x.d.length < 3 || !x.e,
     choices: it => shuffle([...correctList(it.a), ...(it.d || []).filter(w => !correctList(it.a).includes(w))]),
     multi: true,   // played with checkboxes; the answer is stored as a JSON list
     missing: 'Select-multiple questions need at least one correct answer.',
@@ -481,7 +480,7 @@ function addRow(q = '', a = '', d = [], kind = 'written', e = '', grading = 'sta
     t.classList.toggle('hidden', K.side !== 'tf');
     r.querySelector('.q').placeholder = name === 'truefalse' ? 'Statement (the student says whether it is true)'
       : name === 'multiselect' ? 'Question ("Select all that apply" is added for you)' : 'Question';
-    r.querySelector('.d').placeholder = name === 'multiselect' ? 'Wrong answers: one | two | three (at least as many as correct answers)' : 'Wrong answers: one | two | three';
+    r.querySelector('.d').placeholder = name === 'multiselect' ? 'Wrong answers: one | two | three (add as many as you like)' : 'Wrong answers: one | two | three';
     r.querySelector('.a').placeholder = name === 'choice' ? 'Correct answer'
       : name === 'multiselect' ? 'Correct answers: one | two | three (as many as you need)'
       : g.dataset.value === 'exact' ? 'Answer (required for Exact grading)'
@@ -583,10 +582,9 @@ async function fillMissing() {
     const { items: filled } = await api('/distractors', 'POST', { items });
     todo.forEach((r, i) => {
       const x = readRow(r);
-      const K = KINDS[x.kind], want = K.wrongCount ? K.wrongCount(x) : 3;
-      if (K.fields.includes('d') && x.d.length < want) {
+      if (KINDS[x.kind].fields.includes('d') && x.d.length < 3) {
         const extra = filled[i].d.filter(w => w !== x.a && !x.d.includes(w));
-        r.querySelector('.d').value = [...x.d, ...extra].slice(0, want).join(' | ');
+        r.querySelector('.d').value = [...x.d, ...extra].slice(0, 3).join(' | ');
       }
       if (!x.e) r.querySelector('.e').value = filled[i].e;
       growRow(r);
