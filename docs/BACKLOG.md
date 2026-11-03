@@ -27,6 +27,7 @@ Types of work: **feature**, **ux**, **schema** (database change), **prompt** (AI
 - Question types as one table (`KINDS`), True/False type
 - Category and difficulty per quiz (editor fields, shown on the list), select-multiple type (all-or-nothing)
 - Backend tests (`tests/`), architecture note in the README
+- Test-note fixes after deploy: select-multiple wrong-answer fill (one item each, at least as many as correct answers), "(Select all that apply)" added when playing, missed correct options shown with a green outline, Home button and colored score on the results screen, label click flips only Written / Multiple choice, type button keeps its place, Add question will not stack blank questions, generate text no longer follows you between quizzes, source-material file upload, editor backed up in the browser (restore offer after a reload), Save keeps you in the editor (plus Save and close), clearer error when the login has lapsed, larger touch targets on phones
 
 ## Planned (in order)
 
@@ -51,7 +52,20 @@ Types of work: **feature**, **ux**, **schema** (database change), **prompt** (AI
 ### 5. Simple and advanced mode (ux)
 - Simple mode hides grading modes, per-question extras and similar. Advanced shows them under a tidy button. Decide what goes where once the options above exist.
 
+### 6. Sharing and usage (feature)
+- Export or print quizzes (PDF, plain text) so you can see or keep what was generated.
+- Show token use or an estimated cost per action, since the Anthropic usage page lags by about half an hour.
+
+### 7. Polish (ux)
+- Our own dropdown for the Settings model selects and the difficulty select, matching the type buttons (same look and behavior on every browser).
+- Results screen: a nicer finish (more than a colored score).
+- Phone: check the new larger fields and answer buttons on a real phone and adjust.
+- Calm the text of the question-type menus.
+
 ## Ideas and open questions
+
+- Session expiry: Cloudflare Access sends you to a login after a while, which makes requests fail until you reload. The draft backup protects edits; a real fix would be a quiet "log in again" banner.
+- Select-multiple in generation (Auto and Mix do not produce them yet), with "Select all that apply" built in.
 
 - More question types later: ordering, matching, code questions for the advanced coding material. Each is a new entry in `KINDS`.
 - Per-question difficulty. Probably too much for users; quiz-level difficulty may be enough.

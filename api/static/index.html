@@ -27,10 +27,12 @@
   button.ai:hover:not(:disabled) { border-color:var(--b); background:color-mix(in srgb, var(--b) 12%, transparent); }
   button.del:hover:not(:disabled) { border-color:var(--r); background:color-mix(in srgb, var(--r) 12%, transparent); }
   button.kind { width:100%; text-align:left; }
-  .kindrow { display:flex; gap:8px; }
-  .kindrow .kind { flex:1; width:auto; min-width:0; }
-  .kindrow .grade, .kindrow .tf { flex:none; white-space:nowrap; }
-  .kindrow .hidden { display:none; }   /* needed: the toggle buttons set their own display, which beats .hidden */
+  /* The type button keeps a fixed width and the grade / True-False button shares one cell beside it, so the arrow
+     stays under the mouse when the type changes. A hidden side button keeps its space (visibility, not display). */
+  .kindrow { display:grid; grid-template-columns:12rem 1fr; gap:8px; }
+  .kindrow .kind { width:auto; min-width:0; }
+  .kindrow .grade, .kindrow .tf { grid-column:2; grid-row:1; white-space:nowrap; }
+  .kindrow .hidden { visibility:hidden; }   /* needed: the toggle buttons set their own display, which beats .hidden */
   button.kind, button.grade, button.tf { display:flex; align-items:center; justify-content:space-between; gap:8px; }
   .arrow { align-self:stretch; display:flex; align-items:center; margin:-8px -14px -8px 0; padding:0 12px 0 8px; border-radius:0 7px 7px 0; opacity:.7; }
   .arrow:hover { opacity:1; background:color-mix(in srgb, var(--fg) 10%, transparent); }
@@ -57,7 +59,19 @@
   @media (max-width:600px) {   /* phones: the delete button sits beside the type buttons, so the fields get the full width */
     .row { display:block; position:relative; }
     .row > button.del { position:absolute; top:16px; right:16px; height:41.6px; }
-    .row .kindrow { margin-right:52px; }
+    .row .kindrow { margin-right:52px; grid-template-columns:1fr; }
+    .row .kindrow .grade, .row .kindrow .tf { grid-column:1; grid-row:2; }
+    .row .kindrow .hidden { display:none; }
+  }
+  @media (max-width:600px) {   /* phones: bigger touch targets (thumbs), taller fields, larger dropdown arrows */
+    input:not([type=checkbox]):not([type=range]):not([type=file]), select, textarea { padding:14px 12px; }
+    select { appearance:none; padding-right:48px; background-repeat:no-repeat; background-position:right 14px center; background-size:20px;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M4 7l6 6 6-6' fill='none' stroke='%23888' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); }
+    button.kind, button.grade, button.tf { padding:12px 14px; }
+    .arrow { margin:-12px -14px -12px 0; padding:0 18px 0 14px; font-size:1.3rem; }
+    .row > button.del { height:50px; }
+    .choice { padding:16px 14px; margin-bottom:12px; }
+    .menu button { padding:14px 12px; }
   }
   dialog { background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:12px; padding:16px; max-width:min(420px, calc(100vw - 32px)); box-shadow:0 8px 24px rgba(0,0,0,.45); }
   dialog::backdrop { background:rgba(0,0,0,.5); }
@@ -66,6 +80,12 @@
   .btns { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
   .choice { display:block; width:100%; text-align:left; margin-bottom:8px; }
   .choice.sel { border-color:var(--acc); }
+  .choice.ok { background:var(--ok); color:#fff; border-color:var(--ok); }
+  .choice.bad { background:var(--bad); color:#fff; border-color:var(--bad); }
+  .choice.miss { background:transparent; color:var(--g); border:2px solid var(--g); }   /* a correct option the student did not tick */
+  .result { text-align:center; padding:28px 16px; }
+  .score { font-size:3.5rem; font-weight:700; line-height:1.1; margin:8px 0; }
+  .score.good { color:var(--g); } .score.mid { color:#d29922; } .score.low { color:var(--r); }
   .fb { margin:12px 0; padding:12px; border-radius:8px; border:1px solid var(--line); }
   .fb.ok { border-color:var(--ok); } .fb.bad { border-color:var(--bad); }
   .muted { color:#888; font-size:.9rem; }
@@ -94,9 +114,9 @@
     <div class="card">
       <h2>Settings</h2>
       <p class="muted">Pick the AI model for each job. Sonnet is more accurate but costs more per use; Haiku is fast and cheap. Wrong answers and explanations always use Haiku. Saved in this browser.</p>
-      <label for="model-generate">Generating questions from text or files</label>
+      <label for="model-generate">Generating quizzes from text or files</label>
       <select id="model-generate" data-task="generate"></select>
-      <label for="model-answers">Drafting blank written answers</label>
+      <label for="model-answers">Drafting blank answers</label>
       <select id="model-answers" data-task="answers"></select>
       <label for="model-grade">Grading written answers (runs on every written question you play)</label>
       <select id="model-grade" data-task="grade"></select>
@@ -109,7 +129,7 @@
       </details>
       <details>
         <summary>Wrong answers and explanations</summary>
-        <p class="muted">For multiple choice, type the wrong answers separated by | or leave them blank and use the AI fill button, which also writes a short explanation. Saving also fills in anything missing. The AI only fills blank fields and never changes what you typed, except that it adds wrong answers until there are 3.</p>
+        <p class="muted">For multiple choice, type the wrong answers separated by | or leave them blank and use the AI fill button, which also writes a short explanation. Saving also fills in anything missing. The AI only fills blank fields and never changes what you typed, except that it adds wrong answers until there are 3 (for Select multiple, until there are at least as many wrong answers as correct ones). Clicking the type button flips between Written and Multiple choice; use its arrow for the other types.</p>
       </details>
       <details>
         <summary>Blank answers</summary>
@@ -143,6 +163,10 @@
     <details class="card">
       <summary>Source material (optional)</summary>
       <p class="muted">Notes or text this quiz is based on. For written questions with no answer, the AI grades against this.</p>
+      <label for="source-file">Upload a file (optional)</label>
+      <input type="file" id="source-file" accept=".txt,.md,.markdown,.pdf,.docx">
+      <p class="muted">Same file types as below. <span id="source-file-status"></span></p>
+      <label for="source">Or paste text</label>
       <textarea id="source" rows="5"></textarea>
     </details>
 
@@ -180,7 +204,8 @@
     </div>
 
     <div class="savebar">
-      <button id="save" class="primary">Save quiz</button>
+      <button id="save" class="primary">Save</button>
+      <button id="save-close">Save and close</button>
       <span id="fill-status" class="muted"></span>
     </div>
   </section>
@@ -216,11 +241,16 @@ $('theme').onclick = () => {
 };
 
 async function api(path, method = 'GET', body) {
-  const res = await fetch('/api' + path, {
-    method,
-    headers: { 'content-type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch('/api' + path, {
+      method,
+      headers: { 'content-type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {   // a network error; also what a lapsed Cloudflare login looks like (it answers with a redirect the browser blocks)
+    throw new Error('Could not reach the server. Your login may have expired: reload the page to sign in again. Anything you were editing is kept and offered back when you reopen it.');
+  }
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.status);
   return res.json();
 }
@@ -323,7 +353,8 @@ const KINDS = {
     label: 'Select multiple', note: 'Student picks every correct option',
     fields: ['a', 'd', 'e'], side: null,
     requiresAnswer: () => true, draftable: () => false,   // the AI drafts one answer, not a list
-    needsExtras: x => x.d.length < 3 || !x.e,
+    wrongCount: x => Math.max(3, correctList(x.a).length),   // at least as many wrong answers as correct ones
+    needsExtras: x => x.d.length < Math.max(3, correctList(x.a).length) || !x.e,
     choices: it => shuffle([...correctList(it.a), ...(it.d || []).filter(w => !correctList(it.a).includes(w))]),
     multi: true,   // played with checkboxes; the answer is stored as a JSON list
     missing: 'Select-multiple questions need at least one correct answer.',
@@ -363,6 +394,8 @@ const TOGGLES = {
     mix: { label: 'Mix', note: 'Set the percentage of each' },
   },
 };
+// Clicking the label flips only between these (the common types); the arrow menu offers all of them.
+const CYCLE = { kind: ['written', 'choice'] };
 const TOGGLE_BUTTONS = 'button.kind, button.grade, button.tf';
 const toggleType = btn => btn.classList.contains('grade') ? 'grade' : btn.classList.contains('tf') ? 'tf' : btn.classList.contains('gen') ? 'gen' : 'kind';
 function setToggle(btn, v) {
@@ -411,8 +444,8 @@ document.addEventListener('click', e => {
   const b = e.target.closest(TOGGLE_BUTTONS);
   if (!b) return;
   if (e.target.closest('.arrow')) return openMenu(b);
-  const keys = Object.keys(TOGGLES[toggleType(b)]);
-  setToggle(b, keys[(keys.indexOf(b.dataset.value) + 1) % keys.length]);
+  const type = toggleType(b), keys = CYCLE[type] || Object.keys(TOGGLES[type]);
+  setToggle(b, keys[(keys.indexOf(b.dataset.value) + 1) % keys.length]);   // a value outside the cycle goes to its first entry
   b.dispatchEvent(new Event('change'));
 });
 document.addEventListener('keydown', e => {
@@ -436,7 +469,7 @@ function addRow(q = '', a = '', d = [], kind = 'written', e = '', grading = 'sta
     t.oninput = () => grow(t);
     t.onkeydown = ev => { if (ev.key === 'Enter') ev.preventDefault(); };   // single-line values; the box grows by wrapping
   });
-  r.querySelector('button.del').onclick = () => r.remove();
+  r.querySelector('button.del').onclick = () => { r.remove(); saveDraft(); };
   const k = r.querySelector('.k'), g = r.querySelector('.g'), t = r.querySelector('.t');
   setToggle(k, kind);
   setToggle(g, grading);
@@ -446,9 +479,11 @@ function addRow(q = '', a = '', d = [], kind = 'written', e = '', grading = 'sta
     for (const f of ['a', 'd', 'e']) r.querySelector('.' + f).classList.toggle('hidden', !K.fields.includes(f));
     g.classList.toggle('hidden', K.side !== 'grade');
     t.classList.toggle('hidden', K.side !== 'tf');
-    r.querySelector('.q').placeholder = name === 'truefalse' ? 'Statement (the student says whether it is true)' : 'Question';
+    r.querySelector('.q').placeholder = name === 'truefalse' ? 'Statement (the student says whether it is true)'
+      : name === 'multiselect' ? 'Question ("Select all that apply" is added for you)' : 'Question';
+    r.querySelector('.d').placeholder = name === 'multiselect' ? 'Wrong answers: one | two | three (at least as many as correct answers)' : 'Wrong answers: one | two | three';
     r.querySelector('.a').placeholder = name === 'choice' ? 'Correct answer'
-      : name === 'multiselect' ? 'Correct answers: one | two'
+      : name === 'multiselect' ? 'Correct answers: one | two | three (as many as you need)'
       : g.dataset.value === 'exact' ? 'Answer (required for Exact grading)'
       : 'Answer (optional: AI uses source or general knowledge)';
   };
@@ -475,15 +510,40 @@ const readRow = r => {
   };
 };
 const readRows = () => [...$('qs').children].map(readRow);
+// The editor is backed up in this browser as you type, so a page reload (for example after the login expires) does not
+// lose unsaved work. Opening the same quiz (or a new one) offers it back; saving clears it.
+const DRAFT = 'quiz-draft';
+const loadDraft = () => { try { return JSON.parse(localStorage.getItem(DRAFT)); } catch { return null; } };
+const clearDraft = () => { try { localStorage.removeItem(DRAFT); } catch {} };
+let draftTimer;
+const saveDraft = () => {
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(() => {
+    if ($('view-new').classList.contains('hidden')) return;
+    try {
+      localStorage.setItem(DRAFT, JSON.stringify({ id: editingId, at: Date.now(), title: $('title').value, category: $('category').value,
+        difficulty: $('difficulty').value, source: $('source').value, items: readRows() }));
+    } catch {}
+  }, 600);
+};
+$('view-new').addEventListener('input', saveDraft);
+$('view-new').addEventListener('change', saveDraft);
 async function edit(id) {
   editingId = id;
   try {
-    const quiz = id ? await api('/quizzes/' + id) : null;
+    let quiz = id ? await api('/quizzes/' + id) : null;
+    const d = loadDraft();
+    if (d && d.id === id && (d.title || d.items.some(i => i.q))) {
+      if (await ask(`You have unsaved changes from ${new Date(d.at).toLocaleString()}. Restore them?`, 'Restore', 'Discard')) quiz = d;
+      else clearDraft();
+    }
     $('title').value = quiz ? quiz.title : '';
     $('category').value = quiz ? quiz.category || '' : '';
     $('difficulty').value = quiz ? quiz.difficulty || '' : '';
     $('categories').innerHTML = knownCategories.map(c => `<option value="${esc(c)}">`).join('');
     $('source').value = quiz ? quiz.source : '';
+    // The generate section belongs to one editing session: clear it so text pasted for one quiz does not follow you to the next.
+    $('src').value = ''; $('file-status').textContent = ''; $('source-file-status').textContent = ''; $('gen-status').textContent = ''; $('fill-status').textContent = '';
     $('qs').innerHTML = '';
     (quiz ? quiz.items : [{q:'',a:'',d:[],kind:'written'}]).forEach(i => addRow(i.q, i.a, i.d, i.kind, i.e, i.grading));
     show('new');
@@ -491,7 +551,10 @@ async function edit(id) {
   } catch (e) { fail(e); }
 }
 // New questions go at the top, next to the Add button, so there is no scrolling to reach them.
+// If the top question is still empty, Add just moves the cursor there instead of stacking up blank questions.
 $('add-q').onclick = () => {
+  const top = $('qs').firstElementChild;
+  if (top && !top.querySelector('.q').value.trim()) return top.querySelector('.q').focus();
   const r = addRow();
   $('qs').prepend(r);
   r.querySelector('.q').focus();
@@ -520,9 +583,10 @@ async function fillMissing() {
     const { items: filled } = await api('/distractors', 'POST', { items });
     todo.forEach((r, i) => {
       const x = readRow(r);
-      if (KINDS[x.kind].fields.includes('d') && x.d.length < 3) {
+      const K = KINDS[x.kind], want = K.wrongCount ? K.wrongCount(x) : 3;
+      if (K.fields.includes('d') && x.d.length < want) {
         const extra = filled[i].d.filter(w => w !== x.a && !x.d.includes(w));
-        r.querySelector('.d').value = [...x.d, ...extra].slice(0, 3).join(' | ');
+        r.querySelector('.d').value = [...x.d, ...extra].slice(0, want).join(' | ');
       }
       if (!x.e) r.querySelector('.e').value = filled[i].e;
       growRow(r);
@@ -538,7 +602,8 @@ $('fill-d').onclick = async () => {
   } catch (e) { $('fill-status').textContent = 'Error: ' + e.message; }
   $('fill-d').disabled = false;
 };
-$('save').onclick = async () => {
+// Save keeps you in the editor so you can save as you go; "Save and close" goes back to the list.
+const save = async close => {
   const title = $('title').value.trim() || 'Untitled quiz';
   const category = $('category').value.trim(), difficulty = $('difficulty').value;
   const source = $('source').value.trim();
@@ -547,7 +612,7 @@ $('save').onclick = async () => {
   // Rows the AI cannot draft an answer for must have one now; the rest are checked again after the fill.
   const stuck = check.find(i => !i.a && kindOf(i.kind).requiresAnswer(i) && !kindOf(i.kind).draftable(i));
   if (stuck) return notify(kindOf(stuck.kind).missing);
-  $('save').disabled = true;
+  $('save').disabled = $('save-close').disabled = true;
   try {
     try {
       const n = await fillMissing();
@@ -558,29 +623,38 @@ $('save').onclick = async () => {
     const items = readRows().filter(i => i.q);
     const unanswered = items.find(i => !i.a && kindOf(i.kind).requiresAnswer(i));
     if (unanswered) return await notify(kindOf(unanswered.kind).missing);
-    await (editingId ? api('/quizzes/' + editingId, 'PUT', { title, source, category, difficulty, items }) : api('/quizzes', 'POST', { title, source, category, difficulty, items }));
-    $('fill-status').textContent = '';
-    renderList();
+    if (editingId) await api('/quizzes/' + editingId, 'PUT', { title, source, category, difficulty, items });
+    else editingId = (await api('/quizzes', 'POST', { title, source, category, difficulty, items })).id;   // later saves update this quiz
+    clearTimeout(draftTimer); clearDraft();
+    if (close) { $('fill-status').textContent = ''; renderList(); }
+    else $('fill-status').textContent = 'Saved.';
   } catch (e) { fail(e); }
-  finally { $('save').disabled = false; }
+  finally { $('save').disabled = $('save-close').disabled = false; }
 };
+$('save').onclick = () => save(false);
+$('save-close').onclick = () => save(true);
 
 // ---------- AI generation ----------
 const MAX_TEXT = 150000;   // keep in sync with MAX_TEXT in main.py
-$('file').onchange = async () => {
-  const f = $('file').files[0];
-  if (!f) return;
-  if ($('src').value.trim() && !await ask('Replace the pasted text with the text from this file?', 'Replace')) { $('file').value = ''; return; }
-  $('file-status').textContent = 'Reading...';
-  try {
-    const res = await fetch('/api/extract?name=' + encodeURIComponent(f.name), { method: 'POST', body: f });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || res.status);
-    $('src').value = data.text;
-    $('file-status').textContent = `Loaded ${f.name} (${data.text.length.toLocaleString()} characters).`;
-  } catch (e) { $('file-status').textContent = 'Error: ' + e.message; }
-  $('file').value = '';
-};
+// Loads a chosen file's text into a text box. Used by both upload buttons (generate section and source material).
+function loadFile(input, box, status) {
+  input.onchange = async () => {
+    const f = input.files[0];
+    if (!f) return;
+    if (box.value.trim() && !await ask('Replace the text in the box with the text from this file?', 'Replace')) { input.value = ''; return; }
+    status.textContent = 'Reading...';
+    try {
+      const res = await fetch('/api/extract?name=' + encodeURIComponent(f.name), { method: 'POST', body: f });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || res.status);
+      box.value = data.text;
+      status.textContent = `Loaded ${f.name} (${data.text.length.toLocaleString()} characters).`;
+    } catch (e) { status.textContent = 'Error: ' + e.message; }
+    input.value = '';
+  };
+}
+loadFile($('file'), $('src'), $('file-status'));
+loadFile($('source-file'), $('source'), $('source-file-status'));
 $('gen').onclick = async () => {
   const text = $('src').value.trim(), n = $('n-auto').checked ? null : Math.min(30, +$('n').value || 10), kind = $('gen-kind').dataset.value;
   if (!text) return notify('Upload a file or paste some text first.');
@@ -589,6 +663,7 @@ $('gen').onclick = async () => {
   try {
     const { items, usage } = await api('/generate', 'POST', { text, n, kind, choice_pct: +$('mix').value, model: getModel('generate') });
     items.forEach(i => addRow(i.q, i.a, i.d || [], i.kind, i.e || ''));
+    saveDraft();
     if ($('keep-src').checked && !$('source').value.trim()) $('source').value = text;
     const c = items.filter(i => i.kind === 'choice').length;
     $('gen-status').textContent = `Added ${items.length} questions (${c} multiple choice, ${items.length - c} written; ${usage.input} in / ${usage.output} out tokens).`;
@@ -650,8 +725,7 @@ async function play(id) {
   const multiStep = (it, choices) => {
     const correct = correctList(it.a);
     v.innerHTML = `<div class="card"><div class="muted">${esc(quiz.title)} · ${i+1}/${order.length}</div>
-      <p class="big">${esc(it.q)}</p>
-      <p class="muted">Select all that apply.</p>
+      <p class="big">${esc(it.q)} <span class="muted">(Select all that apply)</span></p>
       ${choices.map((c, k) => `<button class="choice" data-k="${k}">☐ ${esc(c)}</button>`).join('')}
       <p><button class="primary" id="check">Check</button> <button id="quit">Quit</button> <button class="primary hidden" id="next">${nextLabel()}</button></p>
       <div id="fb"></div></div>`;
@@ -671,7 +745,8 @@ async function play(id) {
       const chosen = [...picks].map(k => choices[k]);
       const right = chosen.length === correct.length && chosen.every(c => correct.includes(c));
       buttons.forEach((b, k) => {
-        if (correct.includes(choices[k])) { b.classList.add('ok'); b.textContent = '✓ ' + choices[k]; }
+        if (correct.includes(choices[k]) && picks.has(k)) { b.classList.add('ok'); b.textContent = '✓ ' + choices[k]; }
+        else if (correct.includes(choices[k])) { b.classList.add('miss'); b.textContent = '✓ ' + choices[k] + ' (you missed this one)'; }
         else if (picks.has(k)) { b.classList.add('bad'); b.textContent = '✗ ' + choices[k]; }
         else b.textContent = choices[k];
       });
@@ -730,7 +805,8 @@ async function play(id) {
 
   const step = () => {
     if (i >= order.length) {
-      v.innerHTML = `<div class="card"><h2>Done!</h2><p class="big">${Math.round(score / order.length * 100)}%</p><p class="muted">${score} / ${order.length} correct</p><button class="primary" id="again">Retry</button> <button id="back">Back</button></div>`;
+      const pct = Math.round(score / order.length * 100);
+      v.innerHTML = `<div class="card result"><h2>Done!</h2><p class="score ${pct >= 80 ? 'good' : pct >= 50 ? 'mid' : 'low'}">${pct}%</p><p class="muted">${score} / ${order.length} correct</p><button class="primary" id="again">Retry</button> <button id="back">Home</button></div>`;
       $('again').onclick = () => play(id); $('back').onclick = renderList; return;
     }
     const it = order[i];
