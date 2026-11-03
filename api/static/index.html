@@ -52,6 +52,15 @@
   textarea.auto.hidden { display:none; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:12px; }
   .row { display:flex; gap:8px; align-items:center; } .row > * { flex:1; } .row > button { flex:none; }
+  @media (max-width:600px) {   /* phones: the delete button sits beside the type buttons, so the fields get the full width */
+    .row { display:block; position:relative; }
+    .row > button.del { position:absolute; top:16px; right:16px; height:41.6px; }
+    .row .kindrow { margin-right:52px; }
+  }
+  dialog { background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:12px; padding:16px; max-width:min(420px, calc(100vw - 32px)); box-shadow:0 8px 24px rgba(0,0,0,.45); }
+  dialog::backdrop { background:rgba(0,0,0,.5); }
+  dialog p { margin:0 0 4px; white-space:pre-line; }
+  dialog .btns { justify-content:flex-end; margin-top:16px; }
   .btns { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
   .choice { display:block; width:100%; text-align:left; margin-bottom:8px; }
   .fb { margin:12px 0; padding:12px; border-radius:8px; border:1px solid var(--line); }
@@ -93,11 +102,11 @@
       </details>
       <details>
         <summary>Wrong answers and explanations</summary>
-        <p class="muted">For multiple choice, type the wrong answers separated by | or leave them blank and use the AI fill button, which also writes a short explanation. Saving also fills in anything missing.</p>
+        <p class="muted">For multiple choice, type the wrong answers separated by | or leave them blank and use the AI fill button, which also writes a short explanation. Saving also fills in anything missing. The AI only fills blank fields and never changes what you typed, except that it adds wrong answers until there are 3.</p>
       </details>
       <details>
-        <summary>Blank written answers</summary>
-        <p class="muted">If a Written answer is blank, the AI drafts one (from the source material or general knowledge) and stops so you can check it before saving. Exact questions always need your own answer.</p>
+        <summary>Blank answers</summary>
+        <p class="muted">If an answer is blank (Written or multiple choice), the AI drafts one (from the source material or general knowledge) and stops so you can check it before saving. Exact questions always need your own answer.</p>
       </details>
     </div>
   </section>
@@ -128,7 +137,8 @@
         <input type="range" id="mix" min="0" max="100" step="5" value="50">
       </div>
       <label for="n">How many questions</label>
-      <input id="n" type="number" value="10" min="1" max="50">
+      <input id="n" type="number" value="10" min="1" max="30" disabled>
+      <label><input type="checkbox" id="n-auto" checked style="width:auto"> Auto: the AI covers the main ideas (up to 30)</label>
       <label><input type="checkbox" id="keep-src" checked style="width:auto"> Also save the pasted text as this quiz's source material</label>
       <p><button id="gen" class="primary">Generate</button> <span id="gen-status" class="muted"></span></p>
       <p class="muted">Generated questions are added to the Questions list below so you can edit them before saving.</p>
@@ -152,6 +162,16 @@
 
   <section id="view-play" class="hidden"></section>
 </main>
+
+<dialog id="dlg">
+  <form method="dialog">
+    <p id="dlg-msg"></p>
+    <div class="btns">
+      <button value="no" id="dlg-no">Cancel</button>
+      <button value="yes" id="dlg-yes" class="primary">OK</button>
+    </div>
+  </form>
+</dialog>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -179,7 +199,20 @@ async function api(path, method = 'GET', body) {
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.status);
   return res.json();
 }
-const fail = e => alert('Error: ' + e.message);
+// In-page replacements for alert() and confirm(). Both return a promise: ask() resolves true when the user confirms.
+function ask(msg, yes = 'OK', no = 'Cancel') {
+  $('dlg-msg').textContent = msg;
+  $('dlg-yes').textContent = yes;
+  $('dlg-no').textContent = no;
+  $('dlg-no').classList.toggle('hidden', !no);
+  return new Promise(res => {
+    $('dlg').onclose = () => res($('dlg').returnValue === 'yes');
+    $('dlg').showModal();
+    $('dlg-yes').focus();
+  });
+}
+const notify = msg => ask(msg, 'OK', '');
+const fail = e => notify('Error: ' + e.message);
 
 function show(v) {
   for (const n of ['list','new','play','settings']) $('view-'+n).classList.toggle('hidden', n !== v);
@@ -227,7 +260,7 @@ $('view-list').onclick = async e => {
   try {
     if (t.play) play(t.play);
     if (t.edit) edit(t.edit);
-    if (t.del && confirm('Delete this quiz?')) { await api('/quizzes/' + t.del, 'DELETE'); renderList(); }
+    if (t.del && await ask('Delete this quiz?', 'Delete')) { await api('/quizzes/' + t.del, 'DELETE'); renderList(); }
   } catch (err) { fail(err); }
 };
 $('tab-list').onclick = renderList;
@@ -263,6 +296,7 @@ function setToggle(btn, v) {
 }
 setToggle($('gen-kind'), 'auto');
 $('gen-kind').addEventListener('change', () => $('mix-row').classList.toggle('hidden', $('gen-kind').dataset.value !== 'mix'));
+$('n-auto').onchange = () => { $('n').disabled = $('n-auto').checked; };
 $('mix').oninput = () => { $('mix-c').textContent = $('mix').value; $('mix-w').textContent = 100 - $('mix').value; };
 
 let menu = null;
@@ -370,24 +404,29 @@ $('add-q').onclick = () => {
   $('qs').prepend(r);
   r.querySelector('.q').focus();
 };
-// Fills what the AI can: wrong answers and explanations for multiple-choice rows (the user's own wrong answers are
-// kept; the AI only tops them up to 3), and blank answers for written rows that are not Exact.
-// Returns how many rows of each kind it filled.
+// Fills what the AI can, and only where a field is blank: answers (not for Exact, which needs the user's own), then wrong
+// answers and explanations for multiple-choice rows. The user's own wrong answers are kept; the AI only tops them up to 3.
+// Returns how many answers it drafted and how many multiple-choice rows it completed.
 async function fillMissing() {
   const rows = [...$('qs').children];
-  const choiceRows = rows.filter(r => {
+  const draftRows = rows.filter(r => {
+    const x = readRow(r);
+    return x.q && !x.a && (x.kind === 'choice' || x.grading !== 'exact');
+  });
+  const choiceRows = () => rows.filter(r => {
     const x = readRow(r);
     return x.kind === 'choice' && x.q && x.a && (x.d.length < 3 || !x.e);
   });
-  const writtenRows = rows.filter(r => {
-    const x = readRow(r);
-    return x.kind === 'written' && x.grading !== 'exact' && x.q && !x.a;
-  });
-  if (choiceRows.length || writtenRows.length) $('fill-status').textContent = 'Generating...';
-  if (choiceRows.length) {
-    const items = choiceRows.map(r => ({ q: r.querySelector('.q').value.trim(), a: r.querySelector('.a').value.trim() }));
+  if (draftRows.length || choiceRows().length) $('fill-status').textContent = 'Generating...';
+  if (draftRows.length) {
+    const { answers } = await api('/answers', 'POST', { questions: draftRows.map(r => r.querySelector('.q').value.trim()), source: $('source').value.trim(), model: getModel('answers') });
+    draftRows.forEach((r, i) => { r.querySelector('.a').value = answers[i]; growRow(r); });
+  }
+  const todo = choiceRows();
+  if (todo.length) {
+    const items = todo.map(r => ({ q: r.querySelector('.q').value.trim(), a: r.querySelector('.a').value.trim() }));
     const { items: filled } = await api('/distractors', 'POST', { items });
-    choiceRows.forEach((r, i) => {
+    todo.forEach((r, i) => {
       const x = readRow(r);
       if (x.d.length < 3) {
         const extra = filled[i].d.filter(w => w !== x.a && !x.d.includes(w));
@@ -397,17 +436,13 @@ async function fillMissing() {
       growRow(r);
     });
   }
-  if (writtenRows.length) {
-    const { answers } = await api('/answers', 'POST', { questions: writtenRows.map(r => r.querySelector('.q').value.trim()), source: $('source').value.trim(), model: getModel('answers') });
-    writtenRows.forEach((r, i) => { r.querySelector('.a').value = answers[i]; growRow(r); });
-  }
-  return { choice: choiceRows.length, written: writtenRows.length };
+  return { drafted: draftRows.length, choice: todo.length };
 }
 $('fill-d').onclick = async () => {
   $('fill-d').disabled = true; $('fill-status').textContent = '';
   try {
     const n = await fillMissing();
-    $('fill-status').textContent = n.choice + n.written ? `Filled ${n.choice + n.written}.${n.written ? ' Check the answers the AI drafted.' : ''}` : 'Nothing to fill.';
+    $('fill-status').textContent = n.drafted || n.choice ? `Filled ${n.drafted + n.choice}.${n.drafted ? ' Check the answers the AI drafted.' : ''}` : 'Nothing to fill.';
   } catch (e) { $('fill-status').textContent = 'Error: ' + e.message; }
   $('fill-d').disabled = false;
 };
@@ -415,18 +450,18 @@ $('save').onclick = async () => {
   const title = $('title').value.trim() || 'Untitled quiz';
   const source = $('source').value.trim();
   const check = readRows().filter(i => i.q);
-  if (!check.length) return alert('Add at least one question.');
-  if (check.some(i => i.kind === 'choice' && !i.a)) return alert('Multiple-choice questions need a correct answer.');
-  if (check.some(i => i.kind === 'written' && i.grading === 'exact' && !i.a)) return alert('Written questions with Exact grading need an answer to compare against.');
+  if (!check.length) return notify('Add at least one question.');
+  if (check.some(i => i.kind === 'written' && i.grading === 'exact' && !i.a)) return notify('Written questions with Exact grading need an answer to compare against.');
   $('save').disabled = true;
   try {
     try {
       const n = await fillMissing();
       // An AI-drafted answer becomes the grading key, so let the user look at it before it is saved.
-      if (n.written) { $('fill-status').textContent = ''; return alert(`The AI drafted answers for ${n.written} written question${n.written > 1 ? 's' : ''}. Check or edit them, then press Save again.`); }
+      if (n.drafted) { $('fill-status').textContent = ''; return await notify(`The AI drafted answers for ${n.drafted} question${n.drafted > 1 ? 's' : ''}. Check or edit them, then press Save again.`); }
     }
-    catch (e) { if (!confirm('The AI could not fill in the missing answers: ' + e.message + '\n\nSave anyway?')) return; }
+    catch (e) { if (!await ask('The AI could not fill in the missing answers: ' + e.message + '\n\nSave anyway?', 'Save anyway')) return; }
     const items = readRows().filter(i => i.q);
+    if (items.some(i => i.kind === 'choice' && !i.a)) return await notify('Multiple-choice questions need a correct answer.');
     await (editingId ? api('/quizzes/' + editingId, 'PUT', { title, source, items }) : api('/quizzes', 'POST', { title, source, items }));
     $('fill-status').textContent = '';
     renderList();
@@ -439,7 +474,7 @@ const MAX_TEXT = 150000;   // keep in sync with MAX_TEXT in main.py
 $('file').onchange = async () => {
   const f = $('file').files[0];
   if (!f) return;
-  if ($('src').value.trim() && !confirm('Replace the pasted text with the text from this file?')) { $('file').value = ''; return; }
+  if ($('src').value.trim() && !await ask('Replace the pasted text with the text from this file?', 'Replace')) { $('file').value = ''; return; }
   $('file-status').textContent = 'Reading...';
   try {
     const res = await fetch('/api/extract?name=' + encodeURIComponent(f.name), { method: 'POST', body: f });
@@ -451,9 +486,9 @@ $('file').onchange = async () => {
   $('file').value = '';
 };
 $('gen').onclick = async () => {
-  const text = $('src').value.trim(), n = +$('n').value || 10, kind = $('gen-kind').dataset.value;
-  if (!text) return alert('Upload a file or paste some text first.');
-  if (text.length > MAX_TEXT) return alert(`The text has ${text.length.toLocaleString()} characters; the limit is ${MAX_TEXT.toLocaleString()}. Use a smaller part of it.`);
+  const text = $('src').value.trim(), n = $('n-auto').checked ? null : Math.min(30, +$('n').value || 10), kind = $('gen-kind').dataset.value;
+  if (!text) return notify('Upload a file or paste some text first.');
+  if (text.length > MAX_TEXT) return notify(`The text has ${text.length.toLocaleString()} characters; the limit is ${MAX_TEXT.toLocaleString()}. Use a smaller part of it.`);
   $('gen').disabled = true; $('gen-status').textContent = 'Generating...';
   try {
     const { items, usage } = await api('/generate', 'POST', { text, n, kind, choice_pct: +$('mix').value, model: getModel('generate') });

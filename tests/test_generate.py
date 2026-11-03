@@ -43,6 +43,18 @@ def test_model_choice(client, ai):
     assert gen(client, ai, "choice", [], model="nope").status_code == 422
 
 
+def test_auto_count(client, ai):
+    ai.reply = []
+    client.post("/api/generate", json={"text": "t", "n": None, "kind": "choice"})
+    assert "as many as it takes to cover each key concept" in ai.prompt and "at most 30" in ai.prompt
+    client.post("/api/generate", json={"text": "t", "n": None, "kind": "mix", "choice_pct": 60})
+    assert "about 60% of them multiple choice" in ai.prompt
+
+
+def test_count_is_capped(client, ai):
+    assert client.post("/api/generate", json={"text": "t", "n": 31}).status_code == 422
+
+
 def test_non_list_reply_is_502(client, ai):
     ai.reply = {"oops": 1}
     assert client.post("/api/generate", json={"text": "t", "kind": "auto"}).status_code == 502
