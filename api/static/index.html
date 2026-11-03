@@ -65,12 +65,14 @@
   dialog .btns { justify-content:flex-end; margin-top:16px; }
   .btns { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; }
   .choice { display:block; width:100%; text-align:left; margin-bottom:8px; }
+  .choice.sel { border-color:var(--acc); }
   .fb { margin:12px 0; padding:12px; border-radius:8px; border:1px solid var(--line); }
   .fb.ok { border-color:var(--ok); } .fb.bad { border-color:var(--bad); }
   .muted { color:#888; font-size:.9rem; }
   .big { font-size:1.3rem; margin:12px 0; }
   .hidden { display:none; }
   label { display:block; margin:10px 0 4px; font-size:.9rem; color:#888; }
+  .two { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:0 12px; }
   .labelrow { display:flex; align-items:center; justify-content:space-between; margin:10px 0 4px; }
   .labelrow label { margin:0; }
   label.chk { display:flex; align-items:center; gap:6px; cursor:pointer; }
@@ -103,7 +105,7 @@
       <h2>Help</h2>
       <details>
         <summary>Question types and grading</summary>
-        <p class="muted">Pick a type for each question: Written, Multiple choice, or True / False (write a statement and set whether it is true; the AI can fill in an explanation). For Written questions, the small button beside the type sets grading (hover it for details): Exact (must match the answer, no AI), Standard (AI: flexible wording, facts must be right) or Gist (AI: the main idea is enough). For AI grading the answer is optional: without one, the AI uses the quiz's source material, or else general knowledge.</p>
+        <p class="muted">Pick a type for each question: Written, Multiple choice, True / False (write a statement and set whether it is true; the AI can fill in an explanation) or Select multiple (type the correct answers separated by | and add wrong answers; the student must tick every correct option and nothing else). For Written questions, the small button beside the type sets grading (hover it for details): Exact (must match the answer, no AI), Standard (AI: flexible wording, facts must be right) or Gist (AI: the main idea is enough). For AI grading the answer is optional: without one, the AI uses the quiz's source material, or else general knowledge.</p>
       </details>
       <details>
         <summary>Wrong answers and explanations</summary>
@@ -120,6 +122,22 @@
     <div class="card">
       <label for="title">Quiz title</label>
       <input id="title" placeholder="e.g. Spanish verbs">
+      <div class="two">
+        <div>
+          <label for="category">Category (optional)</label>
+          <input id="category" list="categories" maxlength="60" placeholder="e.g. Web basics">
+          <datalist id="categories"></datalist>
+        </div>
+        <div>
+          <label for="difficulty">Difficulty (optional)</label>
+          <select id="difficulty">
+            <option value="">Not set</option>
+            <option value="beginner">Beginner</option>
+            <option value="intermediate">Intermediate</option>
+            <option value="advanced">Advanced</option>
+          </select>
+        </div>
+      </div>
     </div>
 
     <details class="card">
@@ -247,12 +265,15 @@ $('tab-settings').onclick = openSettings;
 modelSelects.forEach(sel => { sel.onchange = () => { try { localStorage.setItem('model-' + sel.dataset.task, sel.value); } catch {} }; });
 
 // ---------- list ----------
+const DIFFICULTIES = { beginner: 'Beginner', intermediate: 'Intermediate', advanced: 'Advanced' };
+let knownCategories = [];   // categories already in use, offered as suggestions in the editor
 async function renderList() {
   try {
     const quizzes = await api('/quizzes');
+    knownCategories = [...new Set(quizzes.map(q => q.category).filter(Boolean))].sort();
     $('view-list').innerHTML = quizzes.length ? quizzes.map(q => `
       <div class="card">
-        <strong>${esc(q.title)}</strong><div class="muted">${q.count} questions</div>
+        <strong>${esc(q.title)}</strong><div class="muted">${q.count} questions${q.category ? ' · ' + esc(q.category) : ''}${q.difficulty ? ' · ' + esc(DIFFICULTIES[q.difficulty] || q.difficulty) : ''}</div>
         <div class="btns">
           <button class="primary" data-play="${q.id}">Start</button>
           <button data-edit="${q.id}">Edit</button>
@@ -298,6 +319,15 @@ const KINDS = {
     choices: (it, all) => buildChoices(it, all),
     missing: 'Multiple-choice questions need a correct answer.',
   },
+  multiselect: {
+    label: 'Select multiple', note: 'Student picks every correct option',
+    fields: ['a', 'd', 'e'], side: null,
+    requiresAnswer: () => true, draftable: () => false,   // the AI drafts one answer, not a list
+    needsExtras: x => x.d.length < 3 || !x.e,
+    choices: it => shuffle([...correctList(it.a), ...(it.d || []).filter(w => !correctList(it.a).includes(w))]),
+    multi: true,   // played with checkboxes; the answer is stored as a JSON list
+    missing: 'Select-multiple questions need at least one correct answer.',
+  },
   truefalse: {
     label: 'True / False', note: 'Student says whether a statement is true',
     fields: ['e'], side: 'tf',
@@ -307,6 +337,9 @@ const KINDS = {
   },
 };
 const kindOf = name => KINDS[name] || KINDS.written;
+// Select-multiple answers are stored as a JSON list; the editor shows them as "one | two".
+const correctList = a => { try { const l = JSON.parse(a); return Array.isArray(l) ? l.map(String) : []; } catch { return []; } };
+const splitList = text => text.split('|').map(x => x.trim()).filter(Boolean);
 
 // Three toggle buttons share this code. button.kind picks the question type, button.grade picks how a written
 // question is graded (Exact -> Standard -> Gist) and button.tf sets a True/False answer. Clicking the label cycles to
@@ -395,7 +428,7 @@ function addRow(q = '', a = '', d = [], kind = 'written', e = '', grading = 'sta
   r.innerHTML = `<div>
       <div class="kindrow"><button type="button" class="kind k"></button><button type="button" class="grade g"></button><button type="button" class="tf t"></button></div>
       <textarea class="q auto" rows="1" placeholder="Question" style="margin-top:6px">${esc(q)}</textarea>
-      <textarea class="a auto" rows="1" placeholder="Answer" style="margin-top:6px">${esc(kind === 'truefalse' ? '' : a)}</textarea>
+      <textarea class="a auto" rows="1" placeholder="Answer" style="margin-top:6px">${esc(kind === 'truefalse' ? '' : kind === 'multiselect' ? correctList(a).join(' | ') : a)}</textarea>
       <textarea class="d auto" rows="1" placeholder="Wrong answers: one | two | three" style="margin-top:6px">${esc(d.join(' | '))}</textarea>
       <textarea class="e auto" rows="1" placeholder="Explanation shown after answering (optional)" style="margin-top:6px">${esc(e)}</textarea>
     </div><button class="del" title="Remove">✕</button>`;
@@ -415,6 +448,7 @@ function addRow(q = '', a = '', d = [], kind = 'written', e = '', grading = 'sta
     t.classList.toggle('hidden', K.side !== 'tf');
     r.querySelector('.q').placeholder = name === 'truefalse' ? 'Statement (the student says whether it is true)' : 'Question';
     r.querySelector('.a').placeholder = name === 'choice' ? 'Correct answer'
+      : name === 'multiselect' ? 'Correct answers: one | two'
       : g.dataset.value === 'exact' ? 'Answer (required for Exact grading)'
       : 'Answer (optional: AI uses source or general knowledge)';
   };
@@ -431,7 +465,9 @@ const readRow = r => {
   const kind = r.querySelector('.k').dataset.value, K = KINDS[kind];
   return {
     q: r.querySelector('.q').value.trim(),
-    a: kind === 'truefalse' ? r.querySelector('.t').dataset.value : r.querySelector('.a').value.trim(),
+    a: kind === 'truefalse' ? r.querySelector('.t').dataset.value
+      : kind === 'multiselect' ? (list => list.length ? JSON.stringify(list) : '')(splitList(r.querySelector('.a').value))
+      : r.querySelector('.a').value.trim(),
     kind,
     d: K.fields.includes('d') ? r.querySelector('.d').value.split('|').map(s => s.trim()).filter(Boolean) : [],
     e: K.fields.includes('e') ? r.querySelector('.e').value.trim() : '',
@@ -444,6 +480,9 @@ async function edit(id) {
   try {
     const quiz = id ? await api('/quizzes/' + id) : null;
     $('title').value = quiz ? quiz.title : '';
+    $('category').value = quiz ? quiz.category || '' : '';
+    $('difficulty').value = quiz ? quiz.difficulty || '' : '';
+    $('categories').innerHTML = knownCategories.map(c => `<option value="${esc(c)}">`).join('');
     $('source').value = quiz ? quiz.source : '';
     $('qs').innerHTML = '';
     (quiz ? quiz.items : [{q:'',a:'',d:[],kind:'written'}]).forEach(i => addRow(i.q, i.a, i.d, i.kind, i.e, i.grading));
@@ -501,6 +540,7 @@ $('fill-d').onclick = async () => {
 };
 $('save').onclick = async () => {
   const title = $('title').value.trim() || 'Untitled quiz';
+  const category = $('category').value.trim(), difficulty = $('difficulty').value;
   const source = $('source').value.trim();
   const check = readRows().filter(i => i.q);
   if (!check.length) return notify('Add at least one question.');
@@ -518,7 +558,7 @@ $('save').onclick = async () => {
     const items = readRows().filter(i => i.q);
     const unanswered = items.find(i => !i.a && kindOf(i.kind).requiresAnswer(i));
     if (unanswered) return await notify(kindOf(unanswered.kind).missing);
-    await (editingId ? api('/quizzes/' + editingId, 'PUT', { title, source, items }) : api('/quizzes', 'POST', { title, source, items }));
+    await (editingId ? api('/quizzes/' + editingId, 'PUT', { title, source, category, difficulty, items }) : api('/quizzes', 'POST', { title, source, category, difficulty, items }));
     $('fill-status').textContent = '';
     renderList();
   } catch (e) { fail(e); }
@@ -606,6 +646,49 @@ async function play(id) {
     });
   };
 
+  // Select multiple: tick every correct option, then Check. Right only if the ticked set is exactly the correct set.
+  const multiStep = (it, choices) => {
+    const correct = correctList(it.a);
+    v.innerHTML = `<div class="card"><div class="muted">${esc(quiz.title)} · ${i+1}/${order.length}</div>
+      <p class="big">${esc(it.q)}</p>
+      <p class="muted">Select all that apply.</p>
+      ${choices.map((c, k) => `<button class="choice" data-k="${k}">☐ ${esc(c)}</button>`).join('')}
+      <p><button class="primary" id="check">Check</button> <button id="quit">Quit</button> <button class="primary hidden" id="next">${nextLabel()}</button></p>
+      <div id="fb"></div></div>`;
+    $('quit').onclick = renderList;
+    const buttons = [...v.querySelectorAll('.choice')];
+    const picks = new Set();
+    let done = false;
+    buttons.forEach((b, k) => b.onclick = () => {
+      if (done) return;
+      if (picks.has(k)) picks.delete(k); else picks.add(k);
+      b.classList.toggle('sel', picks.has(k));
+      b.textContent = (picks.has(k) ? '☑ ' : '☐ ') + choices[k];
+    });
+    $('check').onclick = () => {
+      if (done || !picks.size) return;
+      done = true;
+      const chosen = [...picks].map(k => choices[k]);
+      const right = chosen.length === correct.length && chosen.every(c => correct.includes(c));
+      buttons.forEach((b, k) => {
+        if (correct.includes(choices[k])) { b.classList.add('ok'); b.textContent = '✓ ' + choices[k]; }
+        else if (picks.has(k)) { b.classList.add('bad'); b.textContent = '✗ ' + choices[k]; }
+        else b.textContent = choices[k];
+      });
+      const fb = $('fb');
+      fb.className = 'fb ' + (right ? 'ok' : 'bad');
+      const head = right ? '✅ Correct!' : `❌ Not quite. The correct answers: ${esc(correct.join(', '))}`;
+      const show = text => { fb.innerHTML = `<strong>${head}</strong>` + (text ? `<div style="margin-top:6px">${esc(text)}</div>` : ''); };
+      if (it.e) show(it.e);
+      else {
+        fb.innerHTML = `<strong>${head}</strong><div class="muted">Getting explanation...</div>`;
+        api('/explain', 'POST', { q: it.q, a: correct.join(', '), picked: chosen.join(', ') }).then(r => show(r.explanation)).catch(() => show(''));
+      }
+      $('check').classList.add('hidden'); $('next').classList.remove('hidden'); $('next').focus();
+      $('next').onclick = () => finish(right);
+    };
+  };
+
   const typedStep = it => {
     v.innerHTML = `<div class="card"><div class="muted">${esc(quiz.title)} · ${i+1}/${order.length}</div>
       <p class="big">${esc(it.q)}</p>
@@ -653,7 +736,9 @@ async function play(id) {
     const it = order[i];
     const K = kindOf(it.kind);
     const choices = K.choices ? K.choices(it, quiz.items) : [];
-    if (choices.length >= 2) choiceStep(it, choices); else typedStep(it);   // written, or too few options to build a choice list
+    if (choices.length < 2) typedStep(it);
+    else if (K.multi) multiStep(it, choices);
+    else choiceStep(it, choices);   // written, or too few options to build a choice list
   };
   step();
 }

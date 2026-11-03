@@ -2,6 +2,8 @@ CREATE TABLE quizzes (
     id          SERIAL PRIMARY KEY,
     title       TEXT NOT NULL,
     source      TEXT NOT NULL DEFAULT '',
+    category    TEXT NOT NULL DEFAULT '',
+    difficulty  TEXT NOT NULL DEFAULT '',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

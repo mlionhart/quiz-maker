@@ -29,11 +29,22 @@ def test_unknown_kind_rejected():
 
 
 def test_what_each_kind_stores():
-    assert main.HAS_WRONG_ANSWERS == {"choice"}
-    assert main.HAS_EXPLANATION == {"choice", "truefalse"}
+    assert main.HAS_WRONG_ANSWERS == {"choice", "multiselect"}
+    assert main.HAS_EXPLANATION == {"choice", "truefalse", "multiselect"}
 
 
 def test_distractors_endpoint_accepts_true_false(client, ai):
     ai.reply = [{"d": [], "e": "Because."}]
     r = client.post("/api/distractors", json={"items": [{"q": "Water is wet", "a": "True", "kind": "truefalse"}]})
     assert r.status_code == 200 and r.json()["items"][0]["e"] == "Because."
+
+
+def test_select_multiple_answers_are_a_json_list():
+    assert main.correct_answers('["a", " b ", ""]') == ["a", "b"]
+    assert main.correct_answers("not json") == []
+    assert main.correct_answers('{"a": 1}') == []
+    assert main.correct_answers("[1, 2]") == []
+    assert main.Item(q="q", a='["a", "b"]', d=["x"], kind="multiselect").kind == "multiselect"
+    for bad in ("", "[]", "plain text", '[""]'):
+        with pytest.raises(ValidationError):
+            main.Item(q="q", a=bad, kind="multiselect")

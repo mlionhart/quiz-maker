@@ -18,6 +18,10 @@ from pydantic import BaseModel, Field, model_validator
 from pypdf import PdfReader
 
 DATABASE_URL = os.environ["DATABASE_URL"]
+MAX_UPLOAD = 10 * 1024 * 1024   # bytes, for an uploaded file
+MAX_TEXT = 150_000              # characters of source text sent to the model in one generate call
+MAX_QUESTIONS = 30              # one request must finish within about 100 seconds (Cloudflare's limit)
+
 MODEL = os.getenv("QUIZ_MODEL", "claude-haiku-5-5")
 # Models the Settings page may choose from. MODEL is the default for every call that does not pick one.
 MODELS = {"claude-haiku-5-5": "Haiku 5.5: fast and cheapest", "claude-sonnet-5-5": "Sonnet 5.5: more accurate, costs more"}
@@ -29,9 +33,6 @@ def pick_model(name):
     if name and name not in MODELS:
         raise HTTPException(422, "Unknown model")
     return name or None
-MAX_UPLOAD = 10 * 1024 * 1024   # bytes, for an uploaded file
-MAX_TEXT = 150_000
-MAX_QUESTIONS = 30   # one request must finish within about 100 seconds (Cloudflare's limit)              # characters of source text sent to the model in one generate call
 
 
 def db():
@@ -47,6 +48,8 @@ async def lifespan(app):
         conn.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT ''")
         conn.execute("ALTER TABLE questions ADD COLUMN IF NOT EXISTS explanation TEXT NOT NULL DEFAULT ''")
         conn.execute("ALTER TABLE questions ADD COLUMN IF NOT EXISTS grading TEXT NOT NULL DEFAULT 'standard'")
+        conn.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT ''")
+        conn.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS difficulty TEXT NOT NULL DEFAULT ''")
     yield
 
 
@@ -54,9 +57,20 @@ app = FastAPI(title="Quiz Maker", lifespan=lifespan)
 
 
 # Question types. A new type needs: its name in Kind, a rule in Item below, and its entry in the page's KINDS table.
-Kind = Literal["choice", "written", "truefalse"]
-HAS_WRONG_ANSWERS = {"choice"}              # kinds that store wrong answers (distractors)
-HAS_EXPLANATION = {"choice", "truefalse"}   # kinds that store an explanation
+Kind = Literal["choice", "written", "truefalse", "multiselect"]
+HAS_WRONG_ANSWERS = {"choice", "multiselect"}              # kinds that store wrong answers (distractors)
+HAS_EXPLANATION = {"choice", "truefalse", "multiselect"}   # kinds that store an explanation
+
+
+def correct_answers(a):
+    """The correct answers of a select-multiple question. The answer column holds them as a JSON list of strings."""
+    try:
+        items = json.loads(a)
+    except ValueError:
+        return []
+    if not isinstance(items, list) or not all(isinstance(x, str) for x in items):
+        return []
+    return [x.strip() for x in items if x.strip()]
 
 
 class Item(BaseModel):
@@ -75,12 +89,16 @@ class Item(BaseModel):
             raise ValueError("Exact grading needs an answer to compare against")
         if self.kind == "truefalse" and self.a not in ("True", "False"):
             raise ValueError('True/False questions need the answer "True" or "False"')
+        if self.kind == "multiselect" and not correct_answers(self.a):
+            raise ValueError("Select-multiple questions need at least one correct answer")
         return self
 
 
 class QuizIn(BaseModel):
     title: str
     source: str = ""
+    category: str = Field("", max_length=60)   # one category per quiz; empty means none
+    difficulty: Literal["", "beginner", "intermediate", "advanced"] = ""   # empty means not set
     items: list[Item]
 
 
@@ -153,7 +171,7 @@ def settings():
 def list_quizzes():
     with db() as conn:
         return conn.execute(
-            """SELECT z.id, z.title, count(q.id)::int AS count
+            """SELECT z.id, z.title, z.category, z.difficulty, count(q.id)::int AS count
                FROM quizzes z LEFT JOIN questions q ON q.quiz_id = z.id
                GROUP BY z.id ORDER BY z.created_at DESC"""
         ).fetchall()
@@ -162,7 +180,7 @@ def list_quizzes():
 @app.get("/api/quizzes/{quiz_id}")
 def get_quiz(quiz_id: int):
     with db() as conn:
-        quiz = conn.execute("SELECT id, title, source FROM quizzes WHERE id = %s", (quiz_id,)).fetchone()
+        quiz = conn.execute("SELECT id, title, source, category, difficulty FROM quizzes WHERE id = %s", (quiz_id,)).fetchone()
         if not quiz:
             raise HTTPException(404, "Quiz not found")
         quiz["items"] = conn.execute(
@@ -176,7 +194,8 @@ def get_quiz(quiz_id: int):
 def create_quiz(body: QuizIn):
     with db() as conn:
         row = conn.execute(
-            "INSERT INTO quizzes (title, source) VALUES (%s, %s) RETURNING id", (body.title, body.source)
+            "INSERT INTO quizzes (title, source, category, difficulty) VALUES (%s, %s, %s, %s) RETURNING id",
+            (body.title, body.source, body.category.strip(), body.difficulty),
         ).fetchone()
         save_items(conn.cursor(), row["id"], body.items)
         return {"id": row["id"]}
@@ -186,7 +205,8 @@ def create_quiz(body: QuizIn):
 def update_quiz(quiz_id: int, body: QuizIn):
     with db() as conn:
         cur = conn.execute(
-            "UPDATE quizzes SET title = %s, source = %s WHERE id = %s", (body.title, body.source, quiz_id)
+            "UPDATE quizzes SET title = %s, source = %s, category = %s, difficulty = %s WHERE id = %s",
+            (body.title, body.source, body.category.strip(), body.difficulty, quiz_id),
         )
         if cur.rowcount == 0:
             raise HTTPException(404, "Quiz not found")

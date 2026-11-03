@@ -25,15 +25,14 @@ Types of work: **feature**, **ux**, **schema** (database change), **prompt** (AI
 - Settings & help page with a model choice per task (generating, drafting answers, grading)
 - In-page dialogs, auto-growing fields, phone layout for the delete button
 - Question types as one table (`KINDS`), True/False type
+- Category and difficulty per quiz (editor fields, shown on the list), select-multiple type (all-or-nothing)
 - Backend tests (`tests/`), architecture note in the README
 
 ## Planned (in order)
 
-### 1. Schema batch (feature + schema)
-- Category per quiz: column, editor field with suggestions, shown on the quiz list.
-- Quiz difficulty: column and editor field.
-- Select-multiple question type. Needs several correct answers stored. Plan: keep the correct answers as a JSON list in the answer column for this type only, add the type to `KINDS` and `Kind`, grade by exact set match, play with checkboxes and a Check button.
-- Take a backup (`./backup.sh`) before deploying.
+### 1. Finish the schema batch (deploy)
+- Built and tested locally; needs `./backup.sh`, then deploy. The two new quiz columns are added automatically at startup.
+- Not yet built from this batch: filtering the quiz list by category or difficulty (see Finding quizzes).
 
 ### 2. Generation settings (prompt + ux)
 - Difficulty chosen when generating; the prompt asks for questions at that level and the quiz gets the label.
