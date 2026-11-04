@@ -752,7 +752,7 @@ $('save').onclick = () => save(false);
 $('save-close').onclick = () => save(true);
 
 // ---------- AI generation ----------
-const MAX_TEXT = 150000;   // keep in sync with MAX_TEXT in main.py
+const MAX_TEXT = 30000;   // keep in sync with MAX_TEXT in main.py
 // Loads a chosen file's text into a text box. Used by both upload buttons (generate section and source material).
 function loadFile(input, box, status) {
   input.onchange = async () => {
@@ -776,7 +776,7 @@ $('gen').onclick = async () => {
   const text = $('src').value.trim(), kind = $('gen-kind').dataset.value;
   const n = $('depth').value === 'number' ? Math.min(30, +$('n').value || 10) : null, depth = $('depth').value === 'number' ? 'key' : $('depth').value;
   if (!text) return notify('Upload a file or paste some text first.');
-  if (text.length > MAX_TEXT) return notify(`The text has ${text.length.toLocaleString()} characters; the limit is ${MAX_TEXT.toLocaleString()}. Use a smaller part of it.`);
+  if (text.length > MAX_TEXT) return notify(`The text has ${text.length.toLocaleString()} characters; the limit is ${MAX_TEXT.toLocaleString()} (about ${MAX_TEXT / 3000} pages). Use a smaller part of it, such as one chapter at a time.`);
   $('gen').disabled = true; $('gen-status').textContent = 'Generating...';
   try {
     const { items, usage } = await api('/generate', 'POST', { text, n, depth, kind, choice_pct: +$('mix').value, difficulty: $('gen-difficulty').value, focus: $('focus').value.trim(), model: getModel('generate') });

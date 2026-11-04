@@ -19,7 +19,7 @@ from pypdf import PdfReader
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 MAX_UPLOAD = 10 * 1024 * 1024   # bytes, for an uploaded file
-MAX_TEXT = 150_000              # characters of source text sent to the model in one generate call
+MAX_TEXT = 30_000               # characters of source text (about 10 pages): one generate call, one upload, or a quiz's saved source
 MAX_QUESTIONS = 30              # one request must finish within about 100 seconds (Cloudflare's limit)
 
 MODEL = os.getenv("QUIZ_MODEL", "claude-haiku-5-5")
@@ -96,7 +96,7 @@ class Item(BaseModel):
 
 class QuizIn(BaseModel):
     title: str
-    source: str = ""
+    source: str = Field("", max_length=MAX_TEXT)
     category: str = Field("", max_length=60)   # one category per quiz; empty means none
     difficulty: Literal["", "beginner", "intermediate", "advanced"] = ""   # empty means not set
     items: list[Item]
@@ -278,7 +278,7 @@ async def extract(request: Request, name: str):
     if not text:
         raise HTTPException(422, "No text found in this file (a scanned PDF has no selectable text)")
     if len(text) > MAX_TEXT:
-        raise HTTPException(413, f"The file has {len(text):,} characters; the limit is {MAX_TEXT:,}. Split it into smaller parts.")
+        raise HTTPException(413, f"The file has {len(text):,} characters; the limit is {MAX_TEXT:,} (about {MAX_TEXT // 3000} pages). Split it into smaller parts, such as one chapter at a time.")
     return {"text": text}
 
 

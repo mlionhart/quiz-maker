@@ -5,7 +5,12 @@ Types of work: **feature**, **ux**, **schema** (database change), **prompt** (AI
 
 ## Inbox
 
-(Add new ideas here.)
+- **Bug (ux):** deleting the only question removes the empty question and answer fields too; it should leave one blank question.
+- **Bug (ux, phone):** the Save and close button is too narrow and tall. Needs more room (move the usage info elsewhere, or let the buttons wrap).
+- **Dates (feature + schema):** show when a quiz was created, and keep the dates it was taken with scores (belongs with attempts in item 3).
+- **Answer caching (decision):** cache AI answers to cut calls, or always fresh? Leaning: cache only things that do not change (generated wrong answers and explanations are already stored); keep grading fresh.
+- **Share a passed quiz (feature):** a share button to social media after passing (good advertising), a "passed" message above a score threshold, and an estimate of the person's understanding level of the subject.
+- **Bulk editing (ux):** select several quizzes and move them to a category or folder at once.
 
 ## Decisions made
 
@@ -15,6 +20,8 @@ Types of work: **feature**, **ux**, **schema** (database change), **prompt** (AI
 - **Select-multiple:** all-or-nothing grading (every correct option and no wrong ones). A "generous" mode is not worth the complexity yet.
 - **Models in production:** start with Haiku for everything, with Sonnet as a paid upgrade for accuracy. The server must decide the model from the user's plan, not trust the browser. See Production.
 - **Auto question count:** replaced by Key points (important concepts only, the default), Balanced (about one per main idea) and Thorough (every concept and detail); at most 30 per run.
+
+- **Text limit:** 30,000 characters (about 10 pages) for one generate call, one upload and a quiz's saved source. Long material (a book) is done a chapter at a time. Source text is only sent to grading when a question has no answer key.
 
 ## Done
 
@@ -78,6 +85,7 @@ Types of work: **feature**, **ux**, **schema** (database change), **prompt** (AI
 If this becomes a public app:
 - **Accounts and per-user data**: the app has no login today and relies on Cloudflare Access.
 - **Plans**: free tier on Haiku; the paid tier gets Sonnet for grading and generating. The server picks the model from the plan; the browser setting goes away or becomes a "quality" setting.
+- **Users and limits**: a `users` table (id, email, role: admin or user) with attempts pointing at the user id; for now the email comes from the Cloudflare Access header. Record every AI call (user, model, input and output tokens, date) in a usage table and check the user's daily or monthly token total on the server before each call (admins skip it), with a clear "limit reached" message and a "used X of Y" note. Limit tokens, not requests, plus a per-minute cap. Admin dashboard (usage and cost per user, plans, bans) only once there are other users.
 - **Costs**: grading runs on every written question, and a large source text is sent each time. Add per-user limits and keep source text small.
 - **Limits**: one generate request must finish within about 100 seconds (Cloudflare). 30 questions per run is well under that.
 - Stack (FastAPI, Postgres, Docker) scales fine; the gaps are accounts, rate limiting, and moving long AI jobs to a background queue.
