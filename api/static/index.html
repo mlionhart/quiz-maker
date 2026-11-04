@@ -54,6 +54,15 @@
   textarea { resize:vertical; }
   textarea.auto { resize:none; overflow:hidden; display:block; }
   textarea.auto.hidden { display:none; }
+  .toolbar { display:flex; gap:8px; margin-bottom:12px; } .toolbar input { flex:1; width:auto; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; }
+  h3.sect { font-size:.8rem; text-transform:uppercase; letter-spacing:.05em; color:#888; margin:16px 0 8px; }
+  details.folder { margin-bottom:8px; }
+  details.folder > summary { cursor:pointer; display:flex; justify-content:space-between; align-items:center; padding:12px 4px; font-weight:600; border-bottom:1px solid var(--line); margin-bottom:12px; }
+  details.folder > summary::before { content:"▸"; margin-right:8px; color:#888; }
+  details.folder[open] > summary::before { content:"▾"; }
+  details.folder > summary > span:first-child { flex:1; }
+  #list-status a { color:var(--b); }
   .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:12px; }
   .row { display:flex; gap:8px; align-items:center; } .row > * { flex:1; } .row > button { flex:none; }
   @media (max-width:600px) {   /* phones: the delete button sits beside the type buttons, so the fields get the full width */
@@ -108,7 +117,26 @@
     <button id="theme" title="Switch light/dark">◐</button>
   </nav>
 
-  <section id="view-list"></section>
+  <section id="view-list">
+    <div id="list-tools" class="hidden">
+      <div class="toolbar">
+        <input id="search" type="search" placeholder="Search by title or category" aria-label="Search quizzes">
+        <button id="filters-btn" aria-expanded="false">Filters</button>
+      </div>
+      <div id="filters" class="card hidden">
+        <label>Difficulty</label>
+        <div id="diff-chips" class="chips"></div>
+        <label for="sort">Sort quizzes by</label>
+        <select id="sort">
+          <option value="new">Newest first</option>
+          <option value="az">A to Z</option>
+          <option value="size">Most questions</option>
+        </select>
+      </div>
+      <p class="muted" id="list-status"></p>
+    </div>
+    <div id="list-body"></div>
+  </section>
 
   <section id="view-settings" class="hidden">
     <div class="card">
@@ -310,26 +338,76 @@ const sumUsage = list => list.length ? { model: [...new Set(list.map(u => u.mode
 
 // ---------- list ----------
 const DIFFICULTIES = { beginner: 'Beginner', intermediate: 'Intermediate', advanced: 'Advanced' };
+// The list groups quizzes into one folder per category (built from the categories themselves, nothing to set up),
+// with the newest few on top. Search and the difficulty filter narrow it; while either is active the matching folders open.
+let allQuizzes = [];   // as the server sends them: newest first
+const listState = { q: '', diff: '' };
+const read = (key, fallback) => { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } };
+const write = (key, value) => { try { localStorage.setItem(key, value); } catch {} };
+let openFolders = new Set((() => { try { return JSON.parse(read('open-folders', '[]')); } catch { return []; } })());
+$('sort').value = read('list-sort', 'new');
+const SORTS = { new: null, az: (a, b) => a.title.localeCompare(b.title), size: (a, b) => b.count - a.count };
+const RECENT = 3;   // how many "Recently added" quizzes to show on top
+
+const quizCard = (q, withCategory) => `
+  <div class="card">
+    <strong>${esc(q.title)}</strong><div class="muted">${q.count} questions${withCategory && q.category ? ' · ' + esc(q.category) : ''}${q.difficulty ? ' · ' + esc(DIFFICULTIES[q.difficulty] || q.difficulty) : ''}</div>
+    <div class="btns">
+      <button class="primary" data-play="${q.id}">Start</button>
+      <button data-edit="${q.id}">Edit</button>
+      <button data-del="${q.id}">Delete</button>
+    </div>
+  </div>`;
+
+function drawList() {
+  const text = listState.q.trim().toLowerCase(), filtering = !!(text || listState.diff);
+  $('list-tools').classList.toggle('hidden', !allQuizzes.length);
+  $('filters-btn').textContent = 'Filters' + (listState.diff ? ' (1)' : '');
+  $('diff-chips').innerHTML = [['', 'All'], ...Object.entries(DIFFICULTIES)].map(([v, label]) =>
+    `<button type="button" data-diff="${v}" class="${listState.diff === v ? 'active' : ''}">${esc(label)}</button>`).join('');
+  if (!allQuizzes.length) { $('list-body').innerHTML = '<p class="muted">No quizzes yet. Click "New quiz".</p>'; return; }
+
+  let shown = allQuizzes.filter(z => (!text || `${z.title} ${z.category}`.toLowerCase().includes(text)) && (!listState.diff || z.difficulty === listState.diff));
+  if (SORTS[$('sort').value]) shown = [...shown].sort(SORTS[$('sort').value]);
+  $('list-status').innerHTML = filtering ? `Showing ${shown.length} of ${allQuizzes.length}. <a href="#" data-clear="1">Clear filters</a>` : '';
+  if (!shown.length) { $('list-body').innerHTML = '<p class="muted">No quizzes match.</p>'; return; }
+
+  if (!allQuizzes.some(z => z.category)) { $('list-body').innerHTML = shown.map(z => quizCard(z, false)).join(''); return; }   // no categories yet: a plain list
+  const groups = new Map();
+  shown.forEach(z => { if (!groups.has(z.category)) groups.set(z.category, []); groups.get(z.category).push(z); });
+  const names = [...groups.keys()].sort((a, b) => !a ? 1 : !b ? -1 : a.localeCompare(b));   // A to Z, no category last
+  const recent = !filtering && allQuizzes.length > RECENT * 2
+    ? `<h3 class="sect">Recently added</h3>${allQuizzes.slice(0, RECENT).map(z => quizCard(z, true)).join('')}<h3 class="sect">Folders</h3>` : '';
+  $('list-body').innerHTML = recent + names.map(c => `
+    <details class="folder" data-cat="${esc(c)}" ${filtering || openFolders.has(c) ? 'open' : ''}>
+      <summary><span>${esc(c || 'Uncategorized')}</span><span class="muted">${groups.get(c).length}</span></summary>
+      ${groups.get(c).map(z => quizCard(z, false)).join('')}
+    </details>`).join('');
+}
+// Remember which folders are left open (not while a search or filter is forcing them open).
+$('list-body').addEventListener('toggle', e => {
+  if (!e.target.dataset || e.target.dataset.cat === undefined || listState.q.trim() || listState.diff) return;
+  if (e.target.open) openFolders.add(e.target.dataset.cat); else openFolders.delete(e.target.dataset.cat);
+  write('open-folders', JSON.stringify([...openFolders]));
+}, true);
+$('search').oninput = () => { listState.q = $('search').value; drawList(); };
+$('filters-btn').onclick = () => { const h = $('filters').classList.toggle('hidden'); $('filters-btn').setAttribute('aria-expanded', String(!h)); };
+$('sort').onchange = () => { write('list-sort', $('sort').value); drawList(); };
+$('diff-chips').onclick = e => { if (e.target.dataset.diff !== undefined) { listState.diff = e.target.dataset.diff; drawList(); } };
+
 let knownCategories = [];   // categories already in use, offered as suggestions in the editor
 async function renderList() {
   try {
-    const quizzes = await api('/quizzes');
-    knownCategories = [...new Set(quizzes.map(q => q.category).filter(Boolean))].sort();
-    $('view-list').innerHTML = quizzes.length ? quizzes.map(q => `
-      <div class="card">
-        <strong>${esc(q.title)}</strong><div class="muted">${q.count} questions${q.category ? ' · ' + esc(q.category) : ''}${q.difficulty ? ' · ' + esc(DIFFICULTIES[q.difficulty] || q.difficulty) : ''}</div>
-        <div class="btns">
-          <button class="primary" data-play="${q.id}">Start</button>
-          <button data-edit="${q.id}">Edit</button>
-          <button data-del="${q.id}">Delete</button>
-        </div>
-      </div>`).join('') : '<p class="muted">No quizzes yet. Click "New quiz".</p>';
+    allQuizzes = await api('/quizzes');
+    knownCategories = [...new Set(allQuizzes.map(q => q.category).filter(Boolean))].sort();
+    drawList();
     show('list');
   } catch (e) { fail(e); }
 }
 $('view-list').onclick = async e => {
   const t = e.target.dataset;
   try {
+    if (t.clear) { e.preventDefault(); listState.q = ''; listState.diff = ''; $('search').value = ''; drawList(); }
     if (t.play) play(t.play);
     if (t.edit) edit(t.edit);
     if (t.del && await ask('Delete this quiz?', 'Delete')) { await api('/quizzes/' + t.del, 'DELETE'); renderList(); }

@@ -26,6 +26,7 @@ Types of work: **feature**, **ux**, **schema** (database change), **prompt** (AI
 - In-page dialogs, auto-growing fields, phone layout for the delete button
 - Question types as one table (`KINDS`), True/False type
 - Category and difficulty per quiz (editor fields, shown on the list), select-multiple type (all-or-nothing)
+- Quiz list as category folders with Recently added, search, difficulty filter and sort
 - Backend tests (`tests/`), architecture note in the README
 - Fourth model setting (wrong answers and explanations), and a "Show usage details" switch in Settings that shows the model and token counts after each AI action (hidden by default)
 - Save asks before the AI fills anything in (Fill with AI and save / Save without filling / Cancel), so tokens are never spent unasked
@@ -43,9 +44,9 @@ Types of work: **feature**, **ux**, **schema** (database change), **prompt** (AI
 - Concepts to emphasize: a separate optional box ("what matters most") next to the pasted text, not mixed into it.
 
 ### 3. Finding quizzes (ux)
-- Search by title and category; filter by category and difficulty.
-- Sidebar on desktop, a menu that opens on phones.
-- Warn before discarding unsaved edits when switching tabs.
+- Built: categories shown as automatic folders (collapsible, counts, "Recently added" on top), search, difficulty filter and sort.
+- Still open: a warning before discarding unsaved edits when switching tabs (the draft backup mostly covers this).
+- Later, with accounts: a hamburger menu for navigation (My quizzes, saved lists, Settings), saved lists, and a way to arrange categories into folders (needs a folders table: each category belongs to a folder, or choose a folder when creating a category).
 
 ### 4. Progress and stats (feature + schema)
 - Save your place in a quiz (phone browsers reload background tabs): store progress in the browser and offer to resume.
