@@ -387,14 +387,14 @@ function drawList() {
   if (!allQuizzes.some(z => z.category)) { $('list-body').innerHTML = shown.map(z => quizCard(z, false)).join(''); return; }   // no categories yet: a plain list
   const groups = new Map();
   shown.forEach(z => { if (!groups.has(z.category)) groups.set(z.category, []); groups.get(z.category).push(z); });
-  const names = [...groups.keys()].sort((a, b) => !a ? 1 : !b ? -1 : a.localeCompare(b));   // A to Z, no category last
+  const names = [...groups.keys()].filter(Boolean).sort((a, b) => a.localeCompare(b));   // folders A to Z; quizzes with no category are listed after them, not in a folder
   const recent = !filtering && allQuizzes.length > RECENT * 2
     ? `<h3 class="sect">Recently added</h3>${allQuizzes.slice(0, RECENT).map(z => quizCard(z, true)).join('')}<h3 class="sect">Folders</h3>` : '';
   $('list-body').innerHTML = recent + names.map(c => `
     <details class="folder" data-cat="${esc(c)}" ${filtering || openFolders.has(c) ? 'open' : ''}>
-      <summary><span>${esc(c || 'Uncategorized')}</span><span class="muted">${groups.get(c).length}</span></summary>
+      <summary><span>${esc(c)}</span><span class="muted">${groups.get(c).length}</span></summary>
       ${groups.get(c).map(z => quizCard(z, false)).join('')}
-    </details>`).join('');
+    </details>`).join('') + (groups.get('') || []).map(z => quizCard(z, false)).join('');
 }
 // Remember which folders are left open (not while a search or filter is forcing them open).
 $('list-body').addEventListener('toggle', e => {
