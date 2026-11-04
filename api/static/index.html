@@ -23,6 +23,11 @@
   button.add { color:var(--g); border-color:var(--g); }
   button.ai { color:var(--b); border-color:var(--b); }
   button.del { color:var(--r); border-color:var(--r); }
+  .cardhead { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  button.badge { background:transparent; font-size:.75rem; font-weight:700; letter-spacing:.04em; padding:2px 10px; border-radius:999px; }
+  button.badge.pass { color:var(--g); border-color:var(--g); }
+  table.hist { width:100%; border-collapse:collapse; } table.hist td { padding:6px 4px; border-top:1px solid var(--line); } table.hist td:last-child { text-align:right; font-weight:600; } table.hist td.ok { color:var(--g); }
+  #hist-body { max-height:60vh; overflow:auto; }
   button.add:hover:not(:disabled) { border-color:var(--g); background:color-mix(in srgb, var(--g) 12%, transparent); }
   button.ai:hover:not(:disabled) { border-color:var(--b); background:color-mix(in srgb, var(--b) 12%, transparent); }
   button.del:hover:not(:disabled) { border-color:var(--r); background:color-mix(in srgb, var(--r) 12%, transparent); }
@@ -80,6 +85,7 @@
     .arrow { margin:-12px -14px -12px 0; padding:0 18px 0 14px; font-size:1.3rem; }
     .row > button.del { height:50px; }
     .choice { padding:16px 14px; margin-bottom:12px; }
+    #view-play button:not(.choice) { padding:16px 24px; }   /* Check, Next, Quit, Home: as big as the answer buttons */
     .menu button { padding:14px 12px; }
     .savebar { flex-wrap:wrap; }   /* the status text drops to its own line so the two buttons keep their width */
     .savebar button { flex:1; white-space:nowrap; }
@@ -260,6 +266,13 @@
   <section id="view-play" class="hidden"></section>
 </main>
 
+<dialog id="hist">
+  <form method="dialog">
+    <div id="hist-body"></div>
+    <div class="btns"><button value="close" class="primary">Close</button></div>
+  </form>
+</dialog>
+
 <dialog id="dlg">
   <form method="dialog">
     <p id="dlg-msg"></p>
@@ -335,6 +348,7 @@ const getModel = task => { try { return localStorage.getItem('model-' + task) ||
 const modelSelects = [...document.querySelectorAll('select[data-task]')];
 async function openSettings() {
   show('settings');
+  await syncSettings();
   try {
     const s = await api('/settings');
     modelSelects.forEach(sel => {
@@ -344,11 +358,25 @@ async function openSettings() {
   } catch (e) { modelSelects.forEach(sel => { sel.innerHTML = '<option value="">Standard model</option>'; }); }
 }
 $('tab-settings').onclick = openSettings;
-modelSelects.forEach(sel => { sel.onchange = () => { try { localStorage.setItem('model-' + sel.dataset.task, sel.value); } catch {} }; });
 // Usage details (which model ran, how many tokens) are for the developer; regular users never see them unless they turn this on.
 const devOn = () => { try { return localStorage.getItem('dev') === '1'; } catch { return false; } };
 $('dev').checked = devOn();
-$('dev').onchange = () => { try { localStorage.setItem('dev', $('dev').checked ? '1' : '0'); } catch {} };
+// The settings are also saved on the server under your user, so your phone and workstation agree. This browser keeps a copy
+// (localStorage) that the rest of the page reads; opening the page or the Settings tab refreshes it from the server.
+const SETTING_TASKS = modelSelects.map(s => s.dataset.task);
+const saveSettings = () => api('/me/settings', 'PUT', { models: Object.fromEntries(SETTING_TASKS.map(k => [k, getModel(k)])), dev: devOn() }).catch(() => {});
+async function syncSettings() {
+  try {
+    const s = await api('/me/settings');
+    if (!s.models) return saveSettings();   // nothing saved on the server yet: this browser's settings are the starting point
+    SETTING_TASKS.forEach(k => { try { localStorage.setItem('model-' + k, s.models[k] || ''); } catch {} });
+    try { localStorage.setItem('dev', s.dev ? '1' : '0'); } catch {}
+    $('dev').checked = devOn();
+  } catch {}
+}
+modelSelects.forEach(sel => { sel.onchange = () => { try { localStorage.setItem('model-' + sel.dataset.task, sel.value); } catch {} saveSettings(); }; });
+$('dev').onchange = () => { try { localStorage.setItem('dev', $('dev').checked ? '1' : '0'); } catch {} saveSettings(); };
+syncSettings();
 const usageNote = u => devOn() && u ? `${u.model} · ${u.input} in / ${u.output} out tokens` : '';
 const sumUsage = list => list.length ? { model: [...new Set(list.map(u => u.model))].join(' + '), input: list.reduce((s, u) => s + u.input, 0), output: list.reduce((s, u) => s + u.output, 0) } : null;
 
@@ -366,11 +394,13 @@ const SORTS = { new: null, az: (a, b) => a.title.localeCompare(b.title), size: (
 const RECENT = 3;   // how many "Recently added" quizzes to show on top
 
 const fmtDate = iso => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-const historyLine = a => a ? `Taken ${a.taken}× · last ${a.last_pct}% on ${fmtDate(a.last_taken)} · best ${a.best_pct}%` : 'Not taken yet';
+const fmtTime = iso => new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+// A green PASSED badge (or a plain TAKEN one if no try has passed yet) opens the quiz's history; quizzes never taken have no badge.
+const badge = q => q.attempts ? `<button class="badge ${q.attempts.passed ? 'pass' : ''}" data-hist="${q.id}" title="See your history">${q.attempts.passed ? 'PASSED' : 'TAKEN'}</button>` : '';
 const quizCard = (q, withCategory) => `
   <div class="card">
-    <strong>${esc(q.title)}</strong><div class="muted">${q.count} questions${withCategory && q.category ? ' · ' + esc(q.category) : ''}${q.difficulty ? ' · ' + esc(DIFFICULTIES[q.difficulty] || q.difficulty) : ''}</div>
-    <div class="muted">${historyLine(q.attempts)} · Created ${fmtDate(q.created_at)}</div>
+    <div class="cardhead"><strong>${esc(q.title)}</strong>${badge(q)}</div>
+    <div class="muted">${q.count} questions${withCategory && q.category ? ' · ' + esc(q.category) : ''}${q.difficulty ? ' · ' + esc(DIFFICULTIES[q.difficulty] || q.difficulty) : ''}</div>
     <div class="btns">
       <button class="primary" data-play="${q.id}">Start</button>
       <button data-edit="${q.id}">Edit</button>
@@ -427,11 +457,20 @@ $('view-list').onclick = async e => {
   const t = e.target.dataset;
   try {
     if (t.clear) { e.preventDefault(); listState.q = ''; listState.diff = ''; $('search').value = ''; drawList(); }
+    if (t.hist) showHistory(+t.hist);
     if (t.play) play(t.play);
     if (t.edit) edit(t.edit);
     if (t.del && await ask('Delete this quiz?', 'Delete')) { await api('/quizzes/' + t.del, 'DELETE'); renderList(); }
   } catch (err) { fail(err); }
 };
+async function showHistory(id) {
+  const q = allQuizzes.find(z => z.id === id), h = await api(`/quizzes/${id}/attempts`);
+  const a = q.attempts;
+  $('hist-body').innerHTML = `<h2>${esc(q.title)}</h2>
+    <p class="muted">Created ${fmtDate(q.created_at)} · ${a.passed ? 'Passed' : 'Not passed yet'} (pass mark ${h.pass_pct}%) · Best ${a.best_pct}%</p>
+    <table class="hist">${h.attempts.map(t => `<tr><td>${fmtDate(t.taken_at)}, ${fmtTime(t.taken_at)}</td><td>${t.score} / ${t.total}</td><td class="${t.pct >= h.pass_pct ? 'ok' : ''}">${t.pct}%</td></tr>`).join('')}</table>`;
+  $('hist').showModal();
+}
 $('tab-list').onclick = renderList;
 $('tab-new').onclick = () => edit(null);
 
@@ -567,7 +606,7 @@ document.addEventListener('keydown', e => {
   if (b && e.key === 'ArrowDown') { e.preventDefault(); openMenu(b); }
 });
 window.addEventListener('resize', closeMenu);
-function addRow(q = '', a = '', d = [], kind = 'written', e = '', grading = 'standard') {
+function addRow(q = '', a = '', d = [], kind = 'choice', e = '', grading = 'standard') {
   if (!KINDS[kind]) kind = 'written';
   const r = document.createElement('div');
   r.className = 'row card';
@@ -663,7 +702,7 @@ async function edit(id) {
     // The generate section belongs to one editing session: clear it so text pasted for one quiz does not follow you to the next.
     $('src').value = ''; $('focus').value = ''; $('file-status').textContent = ''; $('source-file-status').textContent = ''; $('gen-status').textContent = ''; $('fill-status').textContent = '';
     $('qs').innerHTML = '';
-    (quiz ? quiz.items : [{q:'',a:'',d:[],kind:'written'}]).forEach(i => addRow(i.q, i.a, i.d, i.kind, i.e, i.grading));
+    (quiz ? quiz.items : [{q:'',a:'',d:[],kind:'choice'}]).forEach(i => addRow(i.q, i.a, i.d, i.kind, i.e, i.grading));
     show('new');
     [...$('qs').children].forEach(growRow);   // rows added while the view was hidden could not be measured
   } catch (e) { fail(e); }
@@ -692,14 +731,14 @@ async function fillMissing() {
   const draftRows = draftableRows(), choiceRows = extrasRows, used = [];
   if (draftRows.length || choiceRows().length) $('fill-status').textContent = 'Generating...';
   if (draftRows.length) {
-    const { answers, usage } = await api('/answers', 'POST', { questions: draftRows.map(r => r.querySelector('.q').value.trim()), source: $('source').value.trim(), model: getModel('answers') });
+    const { answers, usage } = await api('/answers', 'POST', { questions: draftRows.map(r => r.querySelector('.q').value.trim()), source: $('source').value.trim(), title: $('title').value.trim(), category: $('category').value.trim(), model: getModel('answers') });
     if (usage) used.push(usage);
     draftRows.forEach((r, i) => { r.querySelector('.a').value = answers[i]; growRow(r); });
   }
   const todo = choiceRows();
   if (todo.length) {
     const items = todo.map(r => { const x = readRow(r); return { q: x.q, a: x.a, kind: x.kind }; });
-    const { items: filled, usage } = await api('/distractors', 'POST', { items, model: getModel('explain') });
+    const { items: filled, usage } = await api('/distractors', 'POST', { items, title: $('title').value.trim(), category: $('category').value.trim(), model: getModel('explain') });
     if (usage) used.push(usage);
     todo.forEach((r, i) => {
       const x = readRow(r);
@@ -843,7 +882,7 @@ async function play(id) {
       if (it.e) show(it.e);
       else {
         fb.innerHTML = `<strong>${head}</strong><div class="muted">Getting explanation...</div>`;
-        api('/explain', 'POST', { q: it.q, a: it.a, picked, model: getModel('explain') }).then(r => show(r.explanation, usageNote(r.usage))).catch(() => show(''));
+        api('/explain', 'POST', { q: it.q, a: it.a, picked, title: quiz.title, category: quiz.category, model: getModel('explain') }).then(r => show(r.explanation, usageNote(r.usage))).catch(() => show(''));
       }
       $('next').classList.remove('hidden'); $('next').focus();
       $('next').onclick = () => finish(right);
@@ -886,7 +925,7 @@ async function play(id) {
       if (it.e) show(it.e);
       else {
         fb.innerHTML = `<strong>${head}</strong><div class="muted">Getting explanation...</div>`;
-        api('/explain', 'POST', { q: it.q, a: correct.join(', '), picked: chosen.join(', '), model: getModel('explain') }).then(r => show(r.explanation, usageNote(r.usage))).catch(() => show(''));
+        api('/explain', 'POST', { q: it.q, a: correct.join(', '), picked: chosen.join(', '), title: quiz.title, category: quiz.category, model: getModel('explain') }).then(r => show(r.explanation, usageNote(r.usage))).catch(() => show(''));
       }
       $('check').classList.add('hidden'); $('next').classList.remove('hidden'); $('next').focus();
       $('next').onclick = () => finish(right);

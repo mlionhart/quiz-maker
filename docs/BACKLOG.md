@@ -38,7 +38,10 @@ Types of work: **feature**, **ux**, **schema** (database change), **prompt** (AI
 - Test-note fixes after deploy: select-multiple wrong-answer fill (one item each, still 3), "(Select all that apply)" added when playing, missed correct options shown with a green outline, Home button and colored score on the results screen, label click flips only Written / Multiple choice, type button keeps its place, Add question will not stack blank questions, generate text no longer follows you between quizzes, source-material file upload, editor backed up in the browser (restore offer after a reload), Save keeps you in the editor (plus Save and close), clearer error when the login has lapsed, larger touch targets on phones
 
 - Fixes: deleting the only question leaves one blank question; Save and close keeps its width on phones (the status text moves to its own line)
-- Scores and dates: `users` and `attempts` tables, a saved score on finishing a quiz, and created / last / best on each quiz card
+- Scores and dates: `users` and `attempts` tables, a saved score on finishing a quiz. A green PASSED badge (80% or more on any try; a plain TAKEN badge otherwise) sits beside the title and opens a popup with the created date and every try
+- Settings (models, usage details) are saved on the server per user, so phone and workstation match
+- The AI is told the quiz title and category when drafting answers, wrong answers and explanations; select-multiple wrong answers mirror the mix of kinds in the correct answers
+- New questions start as multiple choice; Check, Next and Quit are as big as the answer buttons on phones
 
 ## Planned (in order)
 

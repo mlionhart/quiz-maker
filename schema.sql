@@ -25,6 +25,7 @@ CREATE TABLE users (
     id          SERIAL PRIMARY KEY,
     email       TEXT NOT NULL UNIQUE,
     role        TEXT NOT NULL DEFAULT 'user',
+    settings    JSONB NOT NULL DEFAULT '{}',
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
