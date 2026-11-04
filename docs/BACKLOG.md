@@ -14,7 +14,7 @@ Types of work: **feature**, **ux**, **schema** (database change), **prompt** (AI
 - **Grading source:** stays automatic. A question's own answer is used first, then the quiz's source material, then general knowledge. The play screen already says which one was used. No per-quiz setting for now.
 - **Select-multiple:** all-or-nothing grading (every correct option and no wrong ones). A "generous" mode is not worth the complexity yet.
 - **Models in production:** start with Haiku for everything, with Sonnet as a paid upgrade for accuracy. The server must decide the model from the user's plan, not trust the browser. See Production.
-- **Auto question count:** about one question per main idea, at most 30 per run.
+- **Auto question count:** replaced by Key points (important concepts only, the default), Balanced (about one per main idea) and Thorough (every concept and detail); at most 30 per run.
 
 ## Done
 
@@ -26,6 +26,7 @@ Types of work: **feature**, **ux**, **schema** (database change), **prompt** (AI
 - In-page dialogs, auto-growing fields, phone layout for the delete button
 - Question types as one table (`KINDS`), True/False type
 - Category and difficulty per quiz (editor fields, shown on the list), select-multiple type (all-or-nothing)
+- Generation settings: How many questions is Key points / Balanced / Thorough / A specific number, Difficulty (shared with the quiz's own field, asks for questions at that level), and a "What matters most" box for topics to emphasize
 - Quiz list as category folders with Recently added, search, difficulty filter and sort
 - Backend tests (`tests/`), architecture note in the README
 - Fourth model setting (wrong answers and explanations), and a "Show usage details" switch in Settings that shows the model and token counts after each AI action (hidden by default)
@@ -34,32 +35,26 @@ Types of work: **feature**, **ux**, **schema** (database change), **prompt** (AI
 
 ## Planned (in order)
 
-### 1. Finish the schema batch (deploy)
-- Built and tested locally; needs `./backup.sh`, then deploy. The two new quiz columns are added automatically at startup.
-- Not yet built from this batch: filtering the quiz list by category or difficulty (see Finding quizzes).
+### 1. Deploy what is built
+- Everything under Done after the first deploy is committed locally: push, then `./backup.sh` and rebuild on Server 1. No database changes since the category and difficulty columns.
 
-### 2. Generation settings (prompt + ux)
-- Difficulty chosen when generating; the prompt asks for questions at that level and the quiz gets the label.
-- How thorough: Key points / Balanced / Thorough, replacing the one-size Auto count. A "Specific number" option stays.
-- Concepts to emphasize: a separate optional box ("what matters most") next to the pasted text, not mixed into it.
-
-### 3. Finding quizzes (ux)
+### 2. Finding quizzes (ux)
 - Built: categories shown as automatic folders (collapsible, counts, "Recently added" on top), search, difficulty filter and sort.
 - Still open: a warning before discarding unsaved edits when switching tabs (the draft backup mostly covers this).
 - Later, with accounts: a hamburger menu for navigation (My quizzes, saved lists, Settings), saved lists, and a way to arrange categories into folders (needs a folders table: each category belongs to a folder, or choose a folder when creating a category).
 
-### 4. Progress and stats (feature + schema)
+### 3. Progress and stats (feature + schema)
 - Save your place in a quiz (phone browsers reload background tabs): store progress in the browser and offer to resume.
 - Count attempts and scores per quiz (needs an attempts table).
 
-### 5. Simple and advanced mode (ux)
+### 4. Simple and advanced mode (ux)
 - Simple mode hides grading modes, per-question extras and similar. Advanced shows them under a tidy button. Decide what goes where once the options above exist.
 
-### 6. Sharing and usage (feature)
+### 5. Sharing and usage (feature)
 - Export or print quizzes (PDF, plain text) so you can see or keep what was generated.
 - Estimated cost (not just tokens) next to the usage details.
 
-### 7. Polish (ux)
+### 6. Polish (ux)
 - Our own dropdown for the Settings model selects and the difficulty select, matching the type buttons (same look and behavior on every browser).
 - Results screen: a nicer finish (more than a colored score).
 - Phone: check the new larger fields and answer buttons on a real phone and adjust.

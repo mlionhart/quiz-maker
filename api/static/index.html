@@ -214,11 +214,23 @@
         <label for="mix">Multiple choice <b id="mix-c">50</b>% · Written <b id="mix-w">50</b>%</label>
         <input type="range" id="mix" min="0" max="100" step="5" value="50">
       </div>
-      <div class="labelrow">
-        <label for="n">How many questions</label>
-        <label class="chk"><input type="checkbox" id="n-auto" checked style="width:auto"> Auto</label>
-      </div>
-      <input id="n" type="number" placeholder="Auto" data-v="10" min="1" max="30" disabled title="Auto: the AI covers the main ideas, up to 30 questions">
+      <label for="depth">How many questions</label>
+      <select id="depth">
+        <option value="key">Key points: the important concepts</option>
+        <option value="balanced">Balanced: about one per main idea</option>
+        <option value="thorough">Thorough: every concept and detail</option>
+        <option value="number">A specific number</option>
+      </select>
+      <input id="n" type="number" placeholder="Set by the choice above" value="" data-v="10" min="1" max="30" disabled aria-label="Number of questions" style="margin-top:8px">
+      <label for="gen-difficulty">Difficulty</label>
+      <select id="gen-difficulty">
+        <option value="">Not set</option>
+        <option value="beginner">Beginner</option>
+        <option value="intermediate">Intermediate</option>
+        <option value="advanced">Advanced</option>
+      </select>
+      <label for="focus">What matters most (optional)</label>
+      <textarea id="focus" rows="2" maxlength="1000" placeholder="Topics to cover more, e.g. async functions and closures"></textarea>
       <label><input type="checkbox" id="keep-src" checked style="width:auto"> Also save the pasted text as this quiz's source material</label>
       <p><button id="gen" class="primary">Generate</button> <span id="gen-status" class="muted"></span></p>
       <p class="muted">Generated questions are added to the Questions list below so you can edit them before saving.</p>
@@ -497,13 +509,16 @@ function setToggle(btn, v) {
 }
 setToggle($('gen-kind'), 'auto');
 $('gen-kind').addEventListener('change', () => $('mix-row').classList.toggle('hidden', $('gen-kind').dataset.value !== 'mix'));
-// With Auto on, the box is greyed out and empty; it remembers the number for when Auto is turned off.
-$('n-auto').onchange = () => {
-  const n = $('n');
-  if ($('n-auto').checked) { n.dataset.v = n.value || n.dataset.v; n.value = ''; }
+// The number box is greyed out and empty unless "A specific number" is chosen; it remembers the number in between.
+$('depth').onchange = () => {
+  const n = $('n'), specific = $('depth').value === 'number';
+  if (!specific) { n.dataset.v = n.value || n.dataset.v; n.value = ''; }
   else n.value = n.dataset.v;
-  n.disabled = $('n-auto').checked;
+  n.disabled = !specific;
 };
+// The Difficulty choice in the generate section and the quiz's own Difficulty field are the same setting.
+$('gen-difficulty').onchange = () => { $('difficulty').value = $('gen-difficulty').value; saveDraft(); };
+$('difficulty').addEventListener('change', () => { $('gen-difficulty').value = $('difficulty').value; });
 $('mix').oninput = () => { $('mix-c').textContent = $('mix').value; $('mix-w').textContent = 100 - $('mix').value; };
 
 let menu = null;
@@ -631,10 +646,11 @@ async function edit(id) {
     $('title').value = quiz ? quiz.title : '';
     $('category').value = quiz ? quiz.category || '' : '';
     $('difficulty').value = quiz ? quiz.difficulty || '' : '';
+    $('gen-difficulty').value = $('difficulty').value;
     $('categories').innerHTML = knownCategories.map(c => `<option value="${esc(c)}">`).join('');
     $('source').value = quiz ? quiz.source : '';
     // The generate section belongs to one editing session: clear it so text pasted for one quiz does not follow you to the next.
-    $('src').value = ''; $('file-status').textContent = ''; $('source-file-status').textContent = ''; $('gen-status').textContent = ''; $('fill-status').textContent = '';
+    $('src').value = ''; $('focus').value = ''; $('file-status').textContent = ''; $('source-file-status').textContent = ''; $('gen-status').textContent = ''; $('fill-status').textContent = '';
     $('qs').innerHTML = '';
     (quiz ? quiz.items : [{q:'',a:'',d:[],kind:'written'}]).forEach(i => addRow(i.q, i.a, i.d, i.kind, i.e, i.grading));
     show('new');
@@ -757,12 +773,13 @@ function loadFile(input, box, status) {
 loadFile($('file'), $('src'), $('file-status'));
 loadFile($('source-file'), $('source'), $('source-file-status'));
 $('gen').onclick = async () => {
-  const text = $('src').value.trim(), n = $('n-auto').checked ? null : Math.min(30, +$('n').value || 10), kind = $('gen-kind').dataset.value;
+  const text = $('src').value.trim(), kind = $('gen-kind').dataset.value;
+  const n = $('depth').value === 'number' ? Math.min(30, +$('n').value || 10) : null, depth = $('depth').value === 'number' ? 'key' : $('depth').value;
   if (!text) return notify('Upload a file or paste some text first.');
   if (text.length > MAX_TEXT) return notify(`The text has ${text.length.toLocaleString()} characters; the limit is ${MAX_TEXT.toLocaleString()}. Use a smaller part of it.`);
   $('gen').disabled = true; $('gen-status').textContent = 'Generating...';
   try {
-    const { items, usage } = await api('/generate', 'POST', { text, n, kind, choice_pct: +$('mix').value, model: getModel('generate') });
+    const { items, usage } = await api('/generate', 'POST', { text, n, depth, kind, choice_pct: +$('mix').value, difficulty: $('gen-difficulty').value, focus: $('focus').value.trim(), model: getModel('generate') });
     items.forEach(i => addRow(i.q, i.a, i.d || [], i.kind, i.e || ''));
     saveDraft();
     if ($('keep-src').checked && !$('source').value.trim()) $('source').value = text;

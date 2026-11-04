@@ -64,3 +64,23 @@ def test_input_validation(client, ai):
     assert client.post("/api/generate", json={"text": "x" * (main.MAX_TEXT + 1), "kind": "auto"}).status_code == 422
     assert client.post("/api/generate", json={"text": "t", "kind": "bogus"}).status_code == 422
     assert client.post("/api/generate", json={"text": "t", "kind": "mix", "choice_pct": 101}).status_code == 422
+
+
+def test_thoroughness_changes_what_auto_asks_for(client, ai):
+    ai.reply = []
+    for depth, phrase in (("key", "important concepts"), ("balanced", "one quiz question per main idea"), ("thorough", "every concept")):
+        client.post("/api/generate", json={"text": "t", "n": None, "kind": "choice", "depth": depth})
+        assert phrase in ai.prompt and "at most 30" in ai.prompt
+    client.post("/api/generate", json={"text": "t", "n": 5, "kind": "choice", "depth": "thorough"})
+    assert "Write 5 quiz questions" in ai.prompt and "every concept" not in ai.prompt   # a number wins over thoroughness
+
+
+def test_difficulty_and_focus_reach_the_prompt(client, ai):
+    ai.reply = []
+    client.post("/api/generate", json={"text": "t", "kind": "choice"})
+    assert "beginner" not in ai.prompt and "<focus>" not in ai.prompt
+    client.post("/api/generate", json={"text": "t", "kind": "choice", "difficulty": "advanced", "focus": " async and closures "})
+    assert "advanced learner" in ai.prompt and "<focus>async and closures</focus>" in ai.prompt
+    assert client.post("/api/generate", json={"text": "t", "difficulty": "expert"}).status_code == 422
+    assert client.post("/api/generate", json={"text": "t", "focus": "x" * 1001}).status_code == 422
+    assert client.post("/api/generate", json={"text": "t", "depth": "everything"}).status_code == 422
