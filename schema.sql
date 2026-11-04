@@ -20,3 +20,21 @@ CREATE TABLE questions (
 );
 
 CREATE INDEX questions_quiz_id_idx ON questions (quiz_id, position);
+
+CREATE TABLE users (
+    id          SERIAL PRIMARY KEY,
+    email       TEXT NOT NULL UNIQUE,
+    role        TEXT NOT NULL DEFAULT 'user',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE attempts (
+    id          SERIAL PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    quiz_id     INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+    score       INTEGER NOT NULL,
+    total       INTEGER NOT NULL,
+    taken_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX attempts_user_quiz_idx ON attempts (user_id, quiz_id, taken_at);

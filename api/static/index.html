@@ -81,6 +81,10 @@
     .row > button.del { height:50px; }
     .choice { padding:16px 14px; margin-bottom:12px; }
     .menu button { padding:14px 12px; }
+    .savebar { flex-wrap:wrap; }   /* the status text drops to its own line so the two buttons keep their width */
+    .savebar button { flex:1; white-space:nowrap; }
+    #fill-status { flex-basis:100%; }
+    #fill-status:empty { display:none; }
   }
   dialog { background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:12px; padding:16px; max-width:min(420px, calc(100vw - 32px)); box-shadow:0 8px 24px rgba(0,0,0,.45); }
   dialog::backdrop { background:rgba(0,0,0,.5); }
@@ -361,9 +365,12 @@ $('sort').value = read('list-sort', 'new');
 const SORTS = { new: null, az: (a, b) => a.title.localeCompare(b.title), size: (a, b) => b.count - a.count };
 const RECENT = 3;   // how many "Recently added" quizzes to show on top
 
+const fmtDate = iso => new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+const historyLine = a => a ? `Taken ${a.taken}× · last ${a.last_pct}% on ${fmtDate(a.last_taken)} · best ${a.best_pct}%` : 'Not taken yet';
 const quizCard = (q, withCategory) => `
   <div class="card">
     <strong>${esc(q.title)}</strong><div class="muted">${q.count} questions${withCategory && q.category ? ' · ' + esc(q.category) : ''}${q.difficulty ? ' · ' + esc(DIFFICULTIES[q.difficulty] || q.difficulty) : ''}</div>
+    <div class="muted">${historyLine(q.attempts)} · Created ${fmtDate(q.created_at)}</div>
     <div class="btns">
       <button class="primary" data-play="${q.id}">Start</button>
       <button data-edit="${q.id}">Edit</button>
@@ -575,7 +582,11 @@ function addRow(q = '', a = '', d = [], kind = 'written', e = '', grading = 'sta
     t.oninput = () => grow(t);
     t.onkeydown = ev => { if (ev.key === 'Enter') ev.preventDefault(); };   // single-line values; the box grows by wrapping
   });
-  r.querySelector('button.del').onclick = () => { r.remove(); saveDraft(); };
+  r.querySelector('button.del').onclick = () => {
+    r.remove();
+    if (!$('qs').children.length) addRow();   // always keep one blank question to type into
+    saveDraft();
+  };
   const k = r.querySelector('.k'), g = r.querySelector('.g'), t = r.querySelector('.t');
   setToggle(k, kind);
   setToggle(g, grading);
@@ -925,7 +936,8 @@ async function play(id) {
   const step = () => {
     if (i >= order.length) {
       const pct = Math.round(score / order.length * 100);
-      v.innerHTML = `<div class="card result"><h2>Done!</h2><p class="score ${pct >= 80 ? 'good' : pct >= 50 ? 'mid' : 'low'}">${pct}%</p><p class="muted">${score} / ${order.length} correct</p><button class="primary" id="again">Retry</button> <button id="back">Home</button></div>`;
+      v.innerHTML = `<div class="card result"><h2>Done!</h2><p class="score ${pct >= 80 ? 'good' : pct >= 50 ? 'mid' : 'low'}">${pct}%</p><p class="muted">${score} / ${order.length} correct</p><p class="muted" id="saved"></p><button class="primary" id="again">Retry</button> <button id="back">Home</button></div>`;
+      api(`/quizzes/${id}/attempts`, 'POST', { score, total: order.length }).then(() => { if ($('saved')) $('saved').textContent = 'Score saved to your history.'; }).catch(() => {});
       $('again').onclick = () => play(id); $('back').onclick = renderList; return;
     }
     const it = order[i];

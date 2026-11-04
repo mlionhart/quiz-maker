@@ -5,9 +5,6 @@ Types of work: **feature**, **ux**, **schema** (database change), **prompt** (AI
 
 ## Inbox
 
-- **Bug (ux):** deleting the only question removes the empty question and answer fields too; it should leave one blank question.
-- **Bug (ux, phone):** the Save and close button is too narrow and tall. Needs more room (move the usage info elsewhere, or let the buttons wrap).
-- **Dates (feature + schema):** show when a quiz was created, and keep the dates it was taken with scores (belongs with attempts in item 3).
 - **Answer caching (decision):** cache AI answers to cut calls, or always fresh? Leaning: cache only things that do not change (generated wrong answers and explanations are already stored); keep grading fresh.
 - **Share a passed quiz (feature):** a share button to social media after passing (good advertising), a "passed" message above a score threshold, and an estimate of the person's understanding level of the subject.
 - **Bulk editing (ux):** select several quizzes and move them to a category or folder at once.
@@ -40,6 +37,9 @@ Types of work: **feature**, **ux**, **schema** (database change), **prompt** (AI
 - Save asks before the AI fills anything in (Fill with AI and save / Save without filling / Cancel), so tokens are never spent unasked
 - Test-note fixes after deploy: select-multiple wrong-answer fill (one item each, still 3), "(Select all that apply)" added when playing, missed correct options shown with a green outline, Home button and colored score on the results screen, label click flips only Written / Multiple choice, type button keeps its place, Add question will not stack blank questions, generate text no longer follows you between quizzes, source-material file upload, editor backed up in the browser (restore offer after a reload), Save keeps you in the editor (plus Save and close), clearer error when the login has lapsed, larger touch targets on phones
 
+- Fixes: deleting the only question leaves one blank question; Save and close keeps its width on phones (the status text moves to its own line)
+- Scores and dates: `users` and `attempts` tables, a saved score on finishing a quiz, and created / last / best on each quiz card
+
 ## Planned (in order)
 
 ### 1. Deploy what is built
@@ -51,8 +51,8 @@ Types of work: **feature**, **ux**, **schema** (database change), **prompt** (AI
 - Later, with accounts: a hamburger menu for navigation (My quizzes, saved lists, Settings), saved lists, and a way to arrange categories into folders (needs a folders table: each category belongs to a folder, or choose a folder when creating a category).
 
 ### 3. Progress and stats (feature + schema)
-- Save your place in a quiz (phone browsers reload background tabs): store progress in the browser and offer to resume.
-- Count attempts and scores per quiz (needs an attempts table).
+- Built: `users` and `attempts` tables; finishing a quiz saves the score; each quiz card shows when it was created, how many times you took it, your last score with its date, and your best. The user is the Cloudflare Access email (or "local" without it), stored as a user id.
+- Still open: save your place in a quiz (phone browsers reload background tabs): store progress in the browser and offer to resume; a history screen with scores over time; set your own row's `role` to `admin` in the database when roles are used.
 
 ### 4. Simple and advanced mode (ux)
 - Simple mode hides grading modes, per-question extras and similar. Advanced shows them under a tidy button. Decide what goes where once the options above exist.

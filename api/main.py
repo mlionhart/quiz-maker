@@ -50,6 +50,18 @@ async def lifespan(app):
         conn.execute("ALTER TABLE questions ADD COLUMN IF NOT EXISTS grading TEXT NOT NULL DEFAULT 'standard'")
         conn.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT ''")
         conn.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS difficulty TEXT NOT NULL DEFAULT ''")
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS users (
+                   id SERIAL PRIMARY KEY, email TEXT NOT NULL UNIQUE, role TEXT NOT NULL DEFAULT 'user',
+                   created_at TIMESTAMPTZ NOT NULL DEFAULT now())"""
+        )
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS attempts (
+                   id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                   quiz_id INTEGER NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+                   score INTEGER NOT NULL, total INTEGER NOT NULL, taken_at TIMESTAMPTZ NOT NULL DEFAULT now())"""
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS attempts_user_quiz_idx ON attempts (user_id, quiz_id, taken_at)")
     yield
 
 
@@ -176,14 +188,57 @@ def settings():
     return {"models": [{"id": k, "label": v} for k, v in MODELS.items()], "default": MODEL}
 
 
+def current_user_id(conn, request):
+    """The signed-in person's row in `users`, created on first sight. Cloudflare Access puts their email in a header;
+    without it (running locally, or straight on the LAN) everything counts as one 'local' user.
+    Later sign-in methods can map to the same table, so attempts stay attached to the user id, not the email."""
+    email = request.headers.get("Cf-Access-Authenticated-User-Email", "").strip().lower() or "local"
+    return conn.execute(
+        "INSERT INTO users (email) VALUES (%s) ON CONFLICT (email) DO UPDATE SET email = EXCLUDED.email RETURNING id", (email,)
+    ).fetchone()["id"]
+
+
+class AttemptIn(BaseModel):
+    score: int = Field(ge=0)
+    total: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def check_score(self):
+        if self.score > self.total:
+            raise ValueError("Score cannot be higher than the number of questions")
+        return self
+
+
 @app.get("/api/quizzes")
-def list_quizzes():
+def list_quizzes(request: Request):
     with db() as conn:
-        return conn.execute(
-            """SELECT z.id, z.title, z.category, z.difficulty, count(q.id)::int AS count
+        quizzes = conn.execute(
+            """SELECT z.id, z.title, z.category, z.difficulty, z.created_at, count(q.id)::int AS count
                FROM quizzes z LEFT JOIN questions q ON q.quiz_id = z.id
                GROUP BY z.id ORDER BY z.created_at DESC"""
         ).fetchall()
+        stats = {r["quiz_id"]: r for r in conn.execute(
+            """SELECT quiz_id, count(*)::int AS taken, max(taken_at) AS last_taken,
+                      (array_agg(round(100.0 * score / total)::int ORDER BY taken_at DESC))[1] AS last_pct,
+                      max(round(100.0 * score / total))::int AS best_pct
+               FROM attempts WHERE user_id = %s GROUP BY quiz_id""",
+            (current_user_id(conn, request),),
+        ).fetchall()}
+    for z in quizzes:
+        z["attempts"] = {k: v for k, v in stats.get(z["id"], {}).items() if k != "quiz_id"} or None
+    return quizzes
+
+
+@app.post("/api/quizzes/{quiz_id}/attempts")
+def record_attempt(quiz_id: int, body: AttemptIn, request: Request):
+    with db() as conn:
+        if not conn.execute("SELECT 1 FROM quizzes WHERE id = %s", (quiz_id,)).fetchone():
+            raise HTTPException(404, "Quiz not found")
+        conn.execute(
+            "INSERT INTO attempts (user_id, quiz_id, score, total) VALUES (%s, %s, %s, %s)",
+            (current_user_id(conn, request), quiz_id, body.score, body.total),
+        )
+    return {"ok": True}
 
 
 @app.get("/api/quizzes/{quiz_id}")
